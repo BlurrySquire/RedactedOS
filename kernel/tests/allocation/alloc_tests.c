@@ -1,5 +1,5 @@
 #include "alloc_tests.h"
-#include "assert.h"
+#include "debug/assert.h"
 #include "memory/page_allocator.h"
 
 bool test_kalloc_free(){
