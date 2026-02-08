@@ -8,9 +8,16 @@ clinkedlist_t* modules;
 
 bool load_module(system_module *module){
     if (!modules) modules = clinkedlist_create();
-    if (!module->init) return false;
+    if (!module->init){
+        if (strcmp(module->mount,"/console")) kprintf("[MODULE] module not initialized due to missing initializer");//TODO: can we make printf silently failed so logging becomes easier?
+        return false;
+    }
+    if (!module->init()){
+        if (strcmp(module->mount,"/console")) kprintf("[MODULE] failed to load module %s. Init failed",module->name);
+        return false;
+    }
     clinkedlist_push_front(modules, PHYS_TO_VIRT_P(module));
-    return module->init();
+    return true;
 }
 
 int fs_search(void *node, void *key){

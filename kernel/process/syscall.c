@@ -235,10 +235,11 @@ uint64_t syscall_closef(process_t *ctx){
 }
 
 uint64_t syscall_dir_list(process_t *ctx){
-    kprintf("[SYSCALL implementation error] directory listing not implemented yet");
-    // char *path = (char *)ctx->PROC_X0;
-    // return list_directory_contents(path);
-    return 0;
+    const char *path = (char *)ctx->PROC_X0;
+    void *buf = (void*)ctx->PROC_X1;
+    size_t size = (size_t)ctx->PROC_X2;
+    u64 *offset = (u64*)ctx->PROC_X3;
+    return list_directory_contents(path, buf, size, offset);
 }
 
 // uint64_t syscall_load_fsmod(process_t *ctx){

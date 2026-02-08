@@ -37,7 +37,6 @@ void kernel_main() {
 
     init_main_process();
     
-
 //    if (BOARD_TYPE == 1) disable_visual();
 
     load_module(&console_module);
@@ -97,6 +96,8 @@ void kernel_main() {
     init_bootprocess();
 
     load_module(&scheduler_module);
+    
+    start_scheduler();
 
     panic("Kernel did not activate any process", 0);
     

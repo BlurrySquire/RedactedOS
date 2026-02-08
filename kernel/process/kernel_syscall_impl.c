@@ -119,7 +119,6 @@ extern void closef(file *descriptor){
     close_file(descriptor);
 }
 
-sizedptr dir_list(const char *path){
-    kprintf("[SYSCALL implementation error] directory listing not implemented yet");
-    return (sizedptr){0,0};
+size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
+    return list_directory_contents(path, buf, size, offset);
 }

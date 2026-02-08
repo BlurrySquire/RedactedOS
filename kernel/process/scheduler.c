@@ -87,7 +87,7 @@ bool init_scheduler_module(){
         proc_opened_files->free = kfree;
         proc_opened_files->alloc = list_alloc;
     }
-    return start_scheduler();
+    return true;
 }
 
 
