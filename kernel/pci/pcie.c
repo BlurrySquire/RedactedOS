@@ -17,7 +17,7 @@ bool pcie_link_up(uintptr_t base){
     return (val & STATUS_PCIE_DL_ACTIVE_MASK) >> STATUS_PCIE_DL_ACTIVE_SHIFT && (val & STATUS_PCIE_PHYLINKUP_MASK) >> STATUS_PCIE_PHYLINKUP_SHIFT;
 }
 
-void pcie_reg_set(pointer addr, u32 mask, u32 shift, u32 val){
+void pcie_reg_set(uptr addr, u32 mask, u32 shift, u32 val){
     uint32_t sw = read32(addr);
 
     sw = (sw & ~mask) | ((val << shift) & mask);

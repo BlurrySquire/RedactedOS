@@ -46,20 +46,20 @@ u64 syscall_malloc(process_t *ctx){
     return (uintptr_t)ptr;
 }
 
-pointer syscall_palloc(process_t *ctx){
+uptr syscall_palloc(process_t *ctx){
     size_t size = ctx->PROC_X0;
     void *ptr = palloc(size, MEM_PRIV_USER, MEM_RW, true);
     register_allocation(ctx->alloc_map, ptr, size);
     if (ctx->use_va){
-        pointer va = ctx->last_va_mapping;
+        uptr va = ctx->last_va_mapping;
         u64 pages = count_pages(size, PAGE_SIZE);
         for (u64 i = 0; i < pages; i++){
-            mmu_map_4kb(ctx->ttbr, va + (i * PAGE_SIZE), (pointer)ptr + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
+            mmu_map_4kb(ctx->ttbr, va + (i * PAGE_SIZE), (uptr)ptr + (i * PAGE_SIZE), MAIR_IDX_NORMAL, MEM_RW, MEM_PRIV_USER);
         }
         ptr = (void*)ctx->last_va_mapping;
         ctx->last_va_mapping += (pages * PAGE_SIZE);
     }
-    return (pointer)ptr;
+    return (uptr)ptr;
 }
 
 u64 syscall_pfree(process_t *ctx){
@@ -101,7 +101,7 @@ u64 syscall_get_mouse(process_t *ctx){
     return 0;
 }
 
-pointer syscall_gpu_request_ctx(process_t *ctx){
+uptr syscall_gpu_request_ctx(process_t *ctx){
     draw_ctx* d_ctx = (draw_ctx*)ctx->PROC_X0;
     get_window_ctx(d_ctx);
     return 0;
