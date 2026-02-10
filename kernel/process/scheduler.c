@@ -117,15 +117,9 @@ uint16_t get_current_proc_pid(){
 void reset_process(process_t *proc){
     bool just_finished = processes[current_proc].id == proc->id;
     proc->sp = 0;
-    if (!just_finished || !(processes[current_proc].PROC_PRIV))//Privileged processes use their own stack even in an exception. We'll free it when we reuse it
-        if (proc->stack_phys) pfree((void*)proc->stack_phys-proc->stack_size,proc->stack_size);
-    if (proc->heap_phys) free_managed_page((void*)proc->heap_phys);
     proc->pc = 0;
     proc->spsr = 0;
     proc->exit_code = 0;
-    if (proc->code && proc->code_size){
-        pfree(proc->code, proc->code_size);
-    }
     if (!just_finished && proc->output)
         kfree((void*)proc->output, PROC_OUT_BUF);
     for (int j = 0; j < 31; j++)
@@ -145,14 +139,20 @@ void reset_process(process_t *proc){
             free_sizedptr(p);
         proc->packet_buffer.entries[k] = (sizedptr){0};
     }
+    if (!just_finished && proc->alloc_map) release_page_index(proc->alloc_map);
     close_files_for_process(proc->id);
     if (proc->ttbr) {
-        if (pttbr == proc->ttbr) panic("Trying to free process while mapped", (uintptr_t)proc->ttbr);
+        if (pttbr == proc->ttbr) {
+            kprintf("[PROC error] Trying to free process while mapped", (uintptr_t)proc->ttbr);
+            return;
+        }
         mmu_free_ttbr(proc->ttbr);
     }
     if (proc->exposed_fs.init){
         unload_module(&proc->exposed_fs);
     }
+    if (!just_finished)
+        memset(proc, 0, sizeof(process_t));
 }
 
 void init_main_process(){
@@ -160,6 +160,7 @@ void init_main_process(){
     process_t* proc = &processes[0];
     cpec = (uintptr_t)&processes[0];
     proc->id = next_proc_index++;
+    proc->alloc_map = make_page_index();
     proc->state = BLOCKED;
     proc->heap = (uintptr_t)palloc(0x1000, MEM_PRIV_KERNEL, MEM_RW, false);
     proc->stack_size = 0x10000;

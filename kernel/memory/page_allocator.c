@@ -246,15 +246,7 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
             info->page_alloc = palloc(PAGE_SIZE, level, info->attributes, true);
             index = info->page_alloc;
         }
-        while (index->header.next) {
-            index = index->header.next;
-        }
-        if (index->header.size >= PAGE_INDEX_LIMIT){
-            index->header.next = palloc(PAGE_SIZE, level, info->attributes, true);
-            index = index->header.next;
-        }
-        index->ptrs[index->header.size].ptr = ptr;
-        index->ptrs[index->header.size++].size = size;
+        register_allocation(index, ptr, size);
         if (page_va && next_va && ttbr){
             uintptr_t va = *next_va;
             for (uintptr_t i = (uintptr_t)ptr; i < (uintptr_t)ptr + size; i+= GRANULE_4KB){
@@ -321,7 +313,63 @@ void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, u
     return (void*)result;
 }
 
-//TODO: rather than kalloc, it should be palloc that does translations
+void* make_page_index(){
+    return palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, true);
+}
+
+void register_allocation(page_index *index, void* ptr, size_t size){
+    if (!index){
+        kprint("[ALLOC error] registering allocation with no index");
+        return;
+    }
+    if (!ptr || !size){
+        kprint("[ALLOC error] trying to register null allocation");
+        return;
+    }
+    while (index->header.next) {
+        index = index->header.next;
+    }
+    if (index->header.size >= PAGE_INDEX_LIMIT){
+        index->header.next = make_page_index();
+        index = index->header.next;
+    }
+    index->ptrs[index->header.size].ptr = ptr;
+    index->ptrs[index->header.size++].size = size;
+}
+
+void free_registered(page_index *index, void *ptr){
+    if (!index){
+        kprint("[ALLOC error] freeing allocation with no index");
+        return;
+    }
+    if (!ptr){
+        kprint("[ALLOC error] trying to un-register null allocation");
+        return;
+    }
+    for (page_index *ind = index; ind; ind = ind->header.next){
+        for (u64 i = 0; i < ind->header.size; i++){
+            if (ind->ptrs[i].ptr == ptr){
+                pfree(ind->ptrs[i].ptr, ind->ptrs[i].size);
+                return;
+            }
+        }
+    }
+    kprint("[ALLOC error] trying to free non-registered page");
+}
+
+void release_page_index(page_index *index){
+    if (!index){
+        kprint("[ALLOC error] no page index");
+        return;
+    }
+    if (index->header.next)
+        release_page_index(index->header.next);
+    for (u64 i = 0; i < index->header.size; i++){
+        pfree(index->ptrs[i].ptr, index->ptrs[i].size);
+    }
+    pfree(index, PAGE_SIZE);
+}
+
 void* kalloc(void *page, size_t size, uint16_t alignment, uint8_t level){
     void* ptr = kalloc_inner(page, size, alignment, level, 0, 0, 0);
     if (level == MEM_PRIV_KERNEL) ptr = PHYS_TO_VIRT_P(ptr);

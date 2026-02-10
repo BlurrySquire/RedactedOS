@@ -4,24 +4,26 @@
 #include "memory/page_allocator.h"
 #include "exceptions/irq.h"
 #include "sysregs.h"
-#include "std/std.h"
+#include "string/string.h"
+#include "memory/memory.h"
 
 process_t *create_kernel_process(const char *name, int (*func)(int argc, char* argv[]), int argc, const char* argv[]){
 
     disable_interrupt();
     
     process_t* proc = init_process();
+    proc->alloc_map = make_page_index();
 
     name_process(proc, name);
 
     uint64_t stack_size = 0x10000;
 
     uintptr_t stack = (uintptr_t)palloc(stack_size, MEM_PRIV_KERNEL, MEM_RW, true);
-    kprintf("Stack size %llx. Start %llx", stack_size,stack);
+    register_allocation(proc->alloc_map, (void*)stack, stack_size);
     if (!stack) return 0;
 
-    uintptr_t heap = (uintptr_t)palloc(stack_size, MEM_PRIV_KERNEL, MEM_RW, false);
-    kprintf("Heap %llx", heap);
+    uintptr_t heap = (uintptr_t)palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
+    register_allocation(proc->alloc_map, (void*)heap, PAGE_SIZE);
     if (!heap) return 0;
 
     proc->stack = (stack + stack_size);
@@ -85,7 +87,7 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
     }
 
     proc->output = PHYS_TO_VIRT((uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true));
-
+    register_allocation(proc->alloc_map, (void*)proc->output, PROC_OUT_BUF);
     enable_interrupt();
     
     return proc;

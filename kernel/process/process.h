@@ -8,6 +8,7 @@ extern "C" {
 #include "keyboard_input.h"
 #include "net/network_types.h"
 #include "dev/driver_base.h"
+#include "memory/memory_types.h"
 
 #define INPUT_BUFFER_CAPACITY 64
 #define PACKET_BUFFER_CAPACITY 128
@@ -57,6 +58,7 @@ typedef struct {
     bool use_va;
     uintptr_t *ttbr;
     uintptr_t va;
+    page_index *alloc_map;
     enum process_state { STOPPED, READY, RUNNING, BLOCKED } state;
     __attribute__((aligned(16))) input_buffer_t input_buffer;
     __attribute__((aligned(16))) event_buffer_t event_buffer;

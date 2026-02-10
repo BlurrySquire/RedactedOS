@@ -232,7 +232,6 @@ void relocate_code(void* dst, void* src, uint32_t size, uint64_t src_data_base, 
     uint64_t dst_base = (uint64_t)dst32;
     uint32_t count = size / 4;
 
-    
     process_layout source_layout = {
         .code_base_start = src_base,
         .code_size = size,
@@ -275,6 +274,8 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     name_process(proc, name);
 
     proc->bundle = (char*)bundle;
+    
+    proc->alloc_map = make_page_index();
 
     uintptr_t min_addr = UINT64_MAX;
     uintptr_t max_addr = 0;
@@ -292,6 +293,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     uintptr_t *kttbr = mmu_default_ttbr();
 
     uintptr_t dest = (uintptr_t)palloc_inner(code_size, MEM_PRIV_USER, MEM_EXEC | MEM_RW, true, false);
+    register_allocation(proc->alloc_map, (void*)dest, code_size);
     if (!dest) return 0;
     
     // kprintf("Allocated space for process between %x and %x",dest,dest+((code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)));
@@ -316,6 +318,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     uint64_t stack_size = 0x10000;
 
     uintptr_t stack = (uintptr_t)palloc_inner(stack_size, MEM_PRIV_USER, MEM_RW, true, false);
+    register_allocation(proc->alloc_map, (void*)stack, stack_size);
     if (!stack) return 0;
     
     proc->last_va_mapping += PAGE_SIZE;//Unmapped page to catch stack overflows
@@ -335,6 +338,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     uint8_t heapattr = MEM_RW;
 
     uintptr_t heap = (uintptr_t)palloc_inner(PAGE_SIZE, MEM_PRIV_USER, MEM_RW, false, false);
+    register_allocation(proc->alloc_map, (void*)heap, PAGE_SIZE);
     if (!heap) return 0;
 
     proc->heap = proc->last_va_mapping;
@@ -356,6 +360,7 @@ process_t* create_process(const char *name, const char *bundle, program_load_dat
     proc->sp = proc->stack;
     
     proc->output = PHYS_TO_VIRT((uintptr_t)palloc_inner(PROC_OUT_BUF, MEM_PRIV_USER, MEM_RW, true, false));
+    register_allocation(proc->alloc_map, (void*)proc->output, PROC_OUT_BUF);
     for (uintptr_t i = proc->output; i < proc->output + PROC_OUT_BUF; i += GRANULE_4KB)
         mmu_map_4kb(kttbr, i, i, MAIR_IDX_NORMAL, MEM_RW | MEM_NORM, MEM_PRIV_USER);
     memset(PHYS_TO_VIRT_P(proc->output), 0, PAGE_SIZE);

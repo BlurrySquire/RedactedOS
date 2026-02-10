@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "alloc/mem_types.h"
+#include "memory_types.h"
 
 #define MEM_PRIV_USER   0
 #define MEM_PRIV_KERNEL 1
@@ -17,6 +18,10 @@
 extern "C" {
 #endif
 void page_alloc_enable_verbose();
+void* make_page_index();
+void register_allocation(page_index *index, void* ptr, size_t size);
+void free_registered(page_index *index, void *ptr);
+void release_page_index(page_index *index);
 void setup_page(uintptr_t address, uint8_t attributes);
 void* palloc_inner(uint64_t size, uint8_t level, uint8_t attributes, bool full, bool map);
 void* palloc(uint64_t size, uint8_t level, uint8_t attributes, bool full);
