@@ -86,8 +86,6 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
         }
     }
 
-    proc->output = PHYS_TO_VIRT((uintptr_t)palloc(PROC_OUT_BUF, MEM_PRIV_KERNEL, MEM_RW, true));
-    register_allocation(proc->alloc_map, (void*)proc->output, PROC_OUT_BUF);
     enable_interrupt();
     
     return proc;
