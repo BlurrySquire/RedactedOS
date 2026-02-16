@@ -220,11 +220,7 @@ void mark_used(uintptr_t address, size_t pages)
     }
 }
 
-#define PAGE_INDEX_LIMIT (PAGE_SIZE-sizeof(page_index_hdr))/sizeof(page_index_entry)
-
-//TODO: maybe alloc to different base pages based on alignment? Then it's easier to keep track of full pages, freeing and sizes
 void* kalloc_inner(void *page, size_t size, uint16_t alignment, uint8_t level, uintptr_t page_va, uintptr_t *next_va, uintptr_t *ttbr){
-    //TODO: we're changing the size but not reporting it back, which means the free function does not fully free the allocd memory
     if (!page) return 0;
     size = (size + alignment - 1) & ~(alignment - 1);
 
