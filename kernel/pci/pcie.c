@@ -71,20 +71,11 @@ bool init_hostbridge(){
 	kprintf("Configure");
     
     u32 tmp = read32(base + PCIE_MISC_MISC_CTRL);
+    tmp = INSERT_FIELD(tmp, PCIE_MISC_MISC_CTRL, SCB_ACCESS_EN, 1);
     tmp = INSERT_FIELD(tmp, PCIE_MISC_MISC_CTRL, MAX_BURST_SIZE, 1);
     tmp = INSERT_FIELD(tmp, PCIE_MISC_MISC_CTRL, CFG_READ_UR_MODE, 1);
     tmp = INSERT_FIELD(tmp, PCIE_MISC_MISC_CTRL, MAX_BURST_SIZE, BURST_SIZE_128);//256 pi 5
     write32(base + PCIE_MISC_MISC_CTRL, tmp);
-    
-    kprint("Beginning dump");
-    delay(1000);
-    
-    for (int i = 0; i < 1024; i++){
-        kprintf("[%i] = %x",i, *(uint8_t*)(base + i));
-    }
-    
-    kprint("End dump");
-    delay(5000);
     
     size_t rc_bar2_size = MEM_PCIE_RANGE_SIZE;
     uintptr_t rc_bar2_offset = MEM_PCIE_RANGE_START;
@@ -112,19 +103,12 @@ bool init_hostbridge(){
 	tmp = read32(base + PCIE_MISC_RC_BAR3_CONFIG_LO);
 	tmp &= ~PCIE_MISC_RC_BAR3_CONFIG_LO_SIZE_MASK;
 	write32(base + PCIE_MISC_RC_BAR3_CONFIG_LO, tmp);
-	
-	u32 lnkcap = read32(base + BRCM_PCIE_CAP_REGS + PCI_EXP_LNKCAP);
-	u16 lnkctl2 = read16(base + BRCM_PCIE_CAP_REGS + PCI_EXP_LNKCTL2);
-
-	lnkcap = (lnkcap & ~PCI_EXP_LNKCAP_SLS) | PCIE_GEN;
-	write32(base + BRCM_PCIE_CAP_REGS + PCI_EXP_LNKCAP, lnkcap);
-
-	lnkctl2 = (lnkctl2 & ~0xf) | PCIE_GEN;
-	write16(base + BRCM_PCIE_CAP_REGS + PCI_EXP_LNKCTL2, lnkctl2);
     
     kprintf("Clearing perst");
     
     REG_SET(base, PCIE_RGR1_SW_INIT_1, PERST, 0);
+    
+    delay(100);
 
     kprintf("Link stat now %i",pcie_link_up(base));
     
