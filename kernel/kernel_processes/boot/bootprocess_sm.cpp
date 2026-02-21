@@ -6,6 +6,7 @@
 #include "input/input_dispatch.h"
 #include "usb/usb.h"
 #include "graph/graphics.h"
+#include "exceptions/irq.h"
 
 BootSM::BootSM(){
 
@@ -38,6 +39,7 @@ void BootSM::AdvanceToState(BootStates next_state){
             current_proc = create_windowing_system();
         break;
     }
+    enable_interrupt();
     current_state = next_state;
 }
 

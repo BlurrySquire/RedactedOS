@@ -85,8 +85,6 @@ process_t *create_kernel_process(const char *name, int (*func)(int argc, char* a
             proc->PROC_X1 = (uintptr_t)kargv;
         }
     }
-
-    enable_interrupt();
     
     return proc;
 }
