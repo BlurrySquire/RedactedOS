@@ -1,3 +1,5 @@
+//Adapted from https://github.com/rsta2/circle/blob/master/lib/bcmpciehostbridge.cpp
+
 #include "pcie.h"
 #include "hw/hw.h"
 #include "memory/memory_access.h"
@@ -11,6 +13,8 @@
 
 #define INSERT_FIELD(val, reg, field, field_val) ((val & ~reg##_##field##_MASK) | (reg##_##field##_MASK & (field_val << reg##_##field##_SHIFT)))
 
+#define READ_FIELD(val, reg, field) ((val & reg##_##field##_MASK) >> reg##_##field##_SHIFT)
+
 bool pcie_link_up(uintptr_t base){
     u32 val = read32(base + PCIE_STATUS);
     kprintf("Link status %x",val);
@@ -23,6 +27,8 @@ void pcie_reg_set(uptr addr, u32 mask, u32 shift, u32 val){
     sw = (sw & ~mask) | ((val << shift) & mask);
     
     write32(addr, sw);
+    
+    (void)read32(addr);
 }
 
 int ilog2(u64 v)
@@ -109,8 +115,6 @@ bool init_hostbridge(){
     REG_SET(base, PCIE_RGR1_SW_INIT_1, PERST, 0);
     
     delay(100);
-
-    kprintf("Link stat now %i",pcie_link_up(base));
     
     for (int i = 0; i < 5 && !pcie_link_up(base); i++){
         kprint("Waiting for link...");
@@ -121,6 +125,58 @@ bool init_hostbridge(){
 		kprintf("PCIe BRCM: link down");
 		return false;
 	}
+	
+	u32 val = read32(base + PCIE_MISC_PCIE_STATUS);
+
+	if (!READ_FIELD(val, PCIE_MISC_PCIE_STATUS, PCIE_PORT)){
+	    kprintf("Wrong status field %i",val);
+	}
+	
+	u64 cpu_addr_mb, limit_addr_mb;
+	
+	u64 pcie_addr = MEM_PCIE_RANGE_PCIE_START;
+	u64 cpu_addr = MEM_PCIE_RANGE_START;
+	u64 win_size = MEM_PCIE_RANGE_SIZE;
+
+	/* Set the m_base of the pcie_addr window */
+	write32(base + PCIE_MISC_CPU_2_PCIE_MEM_WIN0_LO, lo32(pcie_addr));
+	write32(base + PCIE_MISC_CPU_2_PCIE_MEM_WIN0_HI, hi32(pcie_addr));
+
+	cpu_addr_mb = cpu_addr >> 20;
+	limit_addr_mb = (cpu_addr + win_size - 1) >> 20;
+
+	/* Write the addr m_base low register */
+	REG_SET(base,
+			   PCIE_MISC_CPU_2_PCIE_MEM_WIN0_BASE_LIMIT,
+			   BASE, cpu_addr_mb);
+	/* Write the addr limit low register */
+	REG_SET(base,
+			   PCIE_MISC_CPU_2_PCIE_MEM_WIN0_BASE_LIMIT,
+			   LIMIT, limit_addr_mb);
+
+	/* Write the cpu addr high register */
+	tmp = (u32)(cpu_addr_mb >> PCIE_MISC_CPU_2_PCIE_MEM_WIN0_BASE_LIMIT_NUM_MASK_BITS);
+	REG_SET(base,
+			   PCIE_MISC_CPU_2_PCIE_MEM_WIN0_BASE_HI,
+			   BASE, tmp);
+	/* Write the cpu limit high register */
+	tmp = (u32)(limit_addr_mb >>
+		PCIE_MISC_CPU_2_PCIE_MEM_WIN0_BASE_LIMIT_NUM_MASK_BITS);
+	REG_SET(base,
+			   PCIE_MISC_CPU_2_PCIE_MEM_WIN0_LIMIT_HI,
+			   LIMIT, tmp);
+	
+	REG_SET(base, PCIE_RC_CFG_PRIV1_ID_VAL3, CLASS_CODE, 0x060400);
+
+	/* PCIe->SCB endian mode for BAR */
+	/* field ENDIAN_MODE_BAR2 = DATA_ENDIAN */
+	REG_SET(base, PCIE_RC_CFG_VENDOR_VENDOR_SPECIFIC_REG1, ENDIAN_MODE_BAR2, 0);
+
+	/*
+	 * Refclk from RC should be gated with CLKREQ# input when ASPM L0s,L1
+	 * is enabled =>  setting the CLKREQ_DEBUG_ENABLE field to 1.
+	 */
+	REG_SET(base, PCIE_MISC_HARD_PCIE_HARD_DEBUG, CLKREQ_DEBUG_ENABLE, 1);
     
     return true;
 }
