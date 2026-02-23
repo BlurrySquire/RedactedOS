@@ -36,8 +36,6 @@ void* alloc_launcher(size_t size){
 }
 
 void add_entry(string_slice name, string_slice ext, string path, package_info info){
-    if (!entries)
-        entries = chunk_array_create_alloc(sizeof(launch_entry), 9, alloc_launcher, 0);
     chunk_array_push(entries, &(launch_entry){
         .name = name,
         .ext = ext,
@@ -75,6 +73,8 @@ void handle_entry(const char *directory, const char *file) {
 }
 
 void load_entries(){
+    if (!entries)
+        entries = chunk_array_create_alloc(sizeof(launch_entry), 9, alloc_launcher, 0);
     size_t c = chunk_array_count(entries);
     for (uint32_t i = 0; i < c; i++){
         // launch_entry *entry = chunk_array_get(entries, i);

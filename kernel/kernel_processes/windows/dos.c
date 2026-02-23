@@ -8,12 +8,18 @@
 #include "graph/tres.h"
 #include "syscalls/syscalls.h"
 #include "exceptions/irq.h"
-#include "image/bmp.h"
+#include "image/png.h"
 #include "graph/tres.h"
 #include "input_keycodes.h"
 #include "wincomp.h"
 
 #define BORDER_SIZE 3
+
+typedef enum { window_mode, doodle_mode, mode_count } dos_mode;
+u16 mode_shortcuts[10];
+
+static dos_mode mode;
+static draw_ctx *dos_ctx;
 
 static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fixed_size, bool fill){
     DRAW(rectangle(ctx, (rect_ui_config){
@@ -32,16 +38,15 @@ static void draw_solid_window(draw_ctx *ctx, int_point fixed_point, gpu_size fix
 void draw_window(window_frame *frame){
     int_point fixed_point = { global_win_offset.x + frame->x - BORDER_SIZE, global_win_offset.y + frame->y - BORDER_SIZE };
     gpu_size fixed_size = { frame->width + BORDER_SIZE*2, frame->height + BORDER_SIZE*2 };
-    draw_ctx *ctx = gpu_get_ctx();
     if (!system_theme.use_window_shadows || focused_window != frame){
-        draw_solid_window(ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
+        draw_solid_window(dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
         return;
     }
-    DRAW(rectangle(ctx, (rect_ui_config){
+    DRAW(rectangle(dos_ctx, (rect_ui_config){
         .border_size = BORDER_SIZE * 1.5,
         .border_color = 0x44000000,
     }, (common_ui_config){ .point = (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, .size = {fixed_size.width+BORDER_SIZE*1.5,fixed_size.height+BORDER_SIZE*1.5}, }),{
-        draw_solid_window(ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
+        draw_solid_window(dos_ctx, (int_point){(uint32_t)fixed_point.x,(uint32_t)fixed_point.y}, fixed_size, !frame->pid);
     });
 }
 
@@ -63,14 +68,15 @@ static inline void redraw_win(void *node){
 }
 
 bool use_desktop_img = false;
-void *img;
+u32 *img;
+draw_ctx img_draw_ctx;
 image_info img_info;
 
 static inline void draw_desktop(){
     if (img)
-        fb_draw_img(gpu_get_ctx(), 0, 0, img, img_info.width, img_info.height);
-    else
-        gpu_clear(system_theme.bg_color);
+        fb_draw_img(dos_ctx, 0, 0, img, img_info.width, img_info.height);
+    // else
+    //     gpu_clear(system_theme.bg_color);
 }
 
 uint32_t calc_average(uint32_t *color, size_t count){
@@ -97,27 +103,40 @@ uint32_t text_color_for_base(uint32_t base){
     return (0xFF << 24) | (avg << 16) | (avg << 8) | avg; 
 }
 
-int window_system(){
-    disable_visual();
+void setup_desktop_bg(){
+    img_info = (image_info){ dos_ctx->width,dos_ctx->height };
+    img = zalloc(img_info.width * img_info.height * sizeof(u32));
+    img_draw_ctx = (draw_ctx){
+        .width = img_info.width,
+        .height = img_info.height,
+        .stride = img_info.width * sizeof(u32),
+        .fb = img
+    };
     file fd = {};
-    if (openf("/boot/redos/desktop.bmp", &fd) == FS_RESULT_SUCCESS){
-        void *imgf = malloc(fd.size);
+    if (openf("/boot/redos/desktop.png", &fd) == FS_RESULT_SUCCESS){
+        void *imgf = zalloc(fd.size);
         readf(&fd, imgf, fd.size);
-        image_info info = bmp_get_info(imgf, fd.size);
-        img_info = (image_info){max(info.width,gpu_get_ctx()->width),max(info.height,gpu_get_ctx()->height)};
+        image_info info = png_get_info(imgf, fd.size);
         bool need_resize = img_info.width != info.width || img_info.height != info.height;
-        img = malloc(img_info.width * img_info.height * sizeof(uint32_t));
-        void *oimg = need_resize ? malloc(info.width * info.height * sizeof(uint32_t)) : img;
-        bmp_read_image(imgf, fd.size, oimg);
+        void *oimg = need_resize ? zalloc(info.width * info.height * sizeof(uint32_t)) : img;
+        png_read_image(imgf, fd.size, oimg);
         if (need_resize){
             rescale_image(info.width, info.height, img_info.width, img_info.height, oimg, img);
-            free_sized(oimg, info.width * info.height * sizeof(uint32_t));
+            release(oimg);
         }
         system_theme.bg_color = calc_average(img, img_info.width * img_info.height);
         system_theme.accent_color = text_color_for_base(system_theme.bg_color);
-        free_sized(imgf, fd.size);
+        release(imgf);
         closef(&fd);
+    } else {
+        fb_fill_rect(&img_draw_ctx, 0, 0, img_draw_ctx.width, img_draw_ctx.height, system_theme.bg_color);
     }
+}
+
+int window_system(){
+    disable_visual();
+    dos_ctx = gpu_get_ctx();
+    setup_desktop_bg();
     keypress kp_g = { 
         .modifier = KEY_MOD_LMETA,
         .keys = { KEY_G, 0, 0, 0, 0, 0}
@@ -155,6 +174,12 @@ int window_system(){
         .keys = { KEY_DOWN, 0, 0, 0, 0, 0}
     });
     
+    for (int i = 0; i < mode_count; i++)
+        mode_shortcuts[i] = sys_subscribe_shortcut_current((keypress){
+            .modifier = KEY_MOD_LALT,
+            .keys = { KEY_1 + i }
+        });
+    
     gpu_point start_point = {0,0};
     bool drawing = false;
     bool dragging = false;
@@ -178,6 +203,8 @@ int window_system(){
             switch_focus(0, 1);
         if (sys_shortcut_triggered_current(wind))
             switch_focus(0, -1);
+        for (int i = 0; i < mode_count; i++)
+            if (sys_shortcut_triggered_current(mode_shortcuts[i])) mode = i;
         if (mouse_button_pressed(MMB)){
             if (!dragging && !drawing){
                 dragging = true;
@@ -197,18 +224,34 @@ int window_system(){
                 drawing = true;
                 start_point = get_mouse_pos();
             }
+            switch (mode){
+                case doodle_mode: {
+                    gpu_point p = get_mouse_pos();
+                    if (p.x != start_point.x || p.y != start_point.y){
+                        fb_draw_line(&img_draw_ctx, start_point.x, start_point.y, p.x, p.y, 0xFFFFFFFF);
+                        start_point = p;
+                        dirty_windows = true;
+                    }
+                } break;
+                default: break;
+            }
         } else if (drawing){
-            gpu_point end_point = get_mouse_pos();
-            gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
-            clicked_frame = 0;
-            click_loc = end_point;
-            linked_list_for_each(window_list, calc_click);
-            if (size.width < 0x10 && size.height < 0x10){
-                if (clicked_frame) sys_set_focus(clicked_frame->pid);
-            } else if (!clicked_frame) {
-                int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
-                disable_interrupt();
-                create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);
+            switch (mode){
+                case window_mode: {
+                    gpu_point end_point = get_mouse_pos();
+                    gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
+                    clicked_frame = 0;
+                    click_loc = end_point;
+                    linked_list_for_each(window_list, calc_click);
+                    if (size.width < 0x10 && size.height < 0x10){
+                        if (clicked_frame) sys_set_focus(clicked_frame->pid);
+                    } else if (!clicked_frame) {
+                        int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
+                        disable_interrupt();
+                        create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);
+                    }
+                } break;
+                default: break;
             }
             drawing = false;
         }
