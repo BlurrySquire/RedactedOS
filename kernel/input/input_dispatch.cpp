@@ -15,7 +15,7 @@ typedef struct {
 
 shortcut shortcuts[16] = {};
 
-uint16_t shortcut_count = 0;
+u16 shortcut_count = 0;
 
 bool secure_mode = false;
 

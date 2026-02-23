@@ -15,8 +15,15 @@
 
 #define BORDER_SIZE 3
 
+typedef enum { right_move, left_move, down_move, up_move } dos_movement;
+u16 move_shortcuts[4];
+
 typedef enum { window_mode, doodle_mode, mode_count } dos_mode;
-u16 mode_shortcuts[10];
+u16 mode_shortcuts[mode_count-1];
+
+u16 sid_g = 0;
+u16 sid_f = 0;
+u16 newwin_s = 0;
 
 static dos_mode mode;
 static draw_ctx *dos_ctx;
@@ -133,78 +140,66 @@ void setup_desktop_bg(){
     }
 }
 
-int window_system(){
-    disable_visual();
-    dos_ctx = gpu_get_ctx();
-    setup_desktop_bg();
-    keypress kp_g = { 
-        .modifier = KEY_MOD_LMETA,
-        .keys = { KEY_G, 0, 0, 0, 0, 0}
-    };
-    uint16_t sid_g = sys_subscribe_shortcut_current(kp_g);
-    keypress kp_f = { 
+void setup_shortcuts(){
+    sid_f = sys_subscribe_shortcut_current((keypress){ 
         .modifier = KEY_MOD_LMETA,
         .keys = { KEY_F, 0, 0, 0, 0, 0}
-    };
-    uint16_t sid_f = sys_subscribe_shortcut_current(kp_f);
-    draw_desktop();
-    
-    uint16_t newwin_s = sys_subscribe_shortcut_current((keypress){
+    });
+    sid_g = sys_subscribe_shortcut_current((keypress){ 
+        .modifier = KEY_MOD_LMETA,
+        .keys = { KEY_G, 0, 0, 0, 0, 0}
+    });
+    newwin_s = sys_subscribe_shortcut_current((keypress){
         .modifier = KEY_MOD_LMETA,
         .keys = { KEY_ENTER, 0, 0, 0, 0, 0}
     });
     
-    uint16_t winl = sys_subscribe_shortcut_current((keypress){
-        .modifier = KEY_MOD_LMETA,
-        .keys = { KEY_LEFT, 0, 0, 0, 0, 0}
-    });
-    
-    uint16_t winr = sys_subscribe_shortcut_current((keypress){
-        .modifier = KEY_MOD_LMETA,
-        .keys = { KEY_RIGHT, 0, 0, 0, 0, 0}
-    });
-    
-    uint16_t winu = sys_subscribe_shortcut_current((keypress){
-        .modifier = KEY_MOD_LMETA,
-        .keys = { KEY_UP, 0, 0, 0, 0, 0}
-    });
-    
-    uint16_t wind = sys_subscribe_shortcut_current((keypress){
-        .modifier = KEY_MOD_LMETA,
-        .keys = { KEY_DOWN, 0, 0, 0, 0, 0}
-    });
+    for (int i = 0; i < 4; i++)
+        move_shortcuts[i] = sys_subscribe_shortcut_current((keypress){
+            .modifier = KEY_MOD_LMETA,
+            .keys = { KEY_RIGHT + i, 0, 0, 0, 0, 0}
+        });
     
     for (int i = 0; i < mode_count; i++)
         mode_shortcuts[i] = sys_subscribe_shortcut_current((keypress){
             .modifier = KEY_MOD_LALT,
             .keys = { KEY_1 + i }
         });
+}
+
+void check_shortcuts(){
+    if (sys_shortcut_triggered_current(sid_g)){
+        global_win_offset = (int_point){0,0};
+        dirty_windows = true;
+    }
+    if (sys_shortcut_triggered_current(sid_f) && focused_window){
+        global_win_offset = (int_point){-focused_window->x + BORDER_SIZE * 5,-focused_window->y + BORDER_SIZE * 5};
+        dirty_windows = true;
+    }
+    if (sys_shortcut_triggered_current(newwin_s))
+        new_managed_window();
+    for (int i = 0; i < 4; i++)
+        if (sys_shortcut_triggered_current(move_shortcuts[i])){
+            int sign = i % 2 == 0 ? -1 : 1;
+            switch_focus(i < 2 ? sign : 0, i >= 2 ? sign : 0);   
+        }
+    for (int i = 0; i < mode_count; i++)
+        if (sys_shortcut_triggered_current(mode_shortcuts[i])) mode = i;
+}
+
+int window_system(){
+    disable_visual();
+    dos_ctx = gpu_get_ctx();
+    setup_desktop_bg();
+    draw_desktop();
+    setup_shortcuts();
     
     gpu_point start_point = {0,0};
     bool drawing = false;
     bool dragging = false;
     
     while (1){
-        if (sys_shortcut_triggered_current(sid_g)){
-            global_win_offset = (int_point){0,0};
-            dirty_windows = true;
-        }
-        if (sys_shortcut_triggered_current(sid_f) && focused_window){
-            global_win_offset = (int_point){-focused_window->x + BORDER_SIZE * 5,-focused_window->y + BORDER_SIZE * 5};
-            dirty_windows = true;
-        }
-        if (sys_shortcut_triggered_current(newwin_s))
-            new_managed_window();
-        if (sys_shortcut_triggered_current(winl))
-            switch_focus(1, 0);
-        if (sys_shortcut_triggered_current(winr))
-            switch_focus(-1, 0);
-        if (sys_shortcut_triggered_current(winu))
-            switch_focus(0, 1);
-        if (sys_shortcut_triggered_current(wind))
-            switch_focus(0, -1);
-        for (int i = 0; i < mode_count; i++)
-            if (sys_shortcut_triggered_current(mode_shortcuts[i])) mode = i;
+        check_shortcuts();
         if (mouse_button_pressed(MMB)){
             if (!dragging && !drawing){
                 dragging = true;
