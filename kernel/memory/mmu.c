@@ -293,13 +293,13 @@ void register_proc_memory(uint64_t va, uint64_t pa, uint8_t attributes, uint8_t 
     mmu_flush_icache();
 }
 
-uintptr_t mmu_translate(uintptr_t va){
-    uint64_t *table = pttbr && (va >> 48) == 0 ? pttbr : kernel_mmu_page;
+uptr mmu_translate(uptr *table, uptr va){
+    if (!table) table = pttbr && (va >> 48) == 0 ? pttbr : kernel_mmu_page;
 
-    uint64_t l0_index = (va >> 39) & 0x1FF;
-    uint64_t l1_index = (va >> 30) & 0x1FF;
-    uint64_t l2_index = (va >> 21) & 0x1FF;
-    uint64_t l3_index = (va >> 12) & 0x1FF;
+    u64 l0_index = (va >> 39) & 0x1FF;
+    u64 l1_index = (va >> 30) & 0x1FF;
+    u64 l2_index = (va >> 21) & 0x1FF;
+    u64 l3_index = (va >> 12) & 0x1FF;
 
     if (!(table[l0_index] & 1)) {
         kprintfv("L1 Table missing");

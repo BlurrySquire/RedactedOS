@@ -16,9 +16,7 @@
 
 void* malloc(size_t size){
     process_t* k = get_proc_by_pid(1);
-    uintptr_t heap_pa = mmu_translate(k->heap);
-    if (!heap_pa) return 0;
-    void* ptr = kalloc((void*)heap_pa, size, ALIGN_16B, MEM_PRIV_KERNEL);
+    void* ptr = kalloc((void*)k->heap, size, ALIGN_16B, MEM_PRIV_KERNEL);
     if (size >= PAGE_SIZE)
         register_allocation(k->alloc_map, ptr, size);//TODO: not fully correct, but this will become a syscall for pages soon so it won't matter
     return ptr;

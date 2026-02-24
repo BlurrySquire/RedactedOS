@@ -21,7 +21,7 @@ void mmu_enable_verbose();
 void mmu_swap_ttbr(uintptr_t* ttbr);
 uintptr_t* mmu_default_ttbr();
 void mmu_free_ttbr(uintptr_t *ttbr);
-uintptr_t mmu_translate(uintptr_t va);
+uptr mmu_translate(uptr *table, uptr va);
 void mmu_map_all(uintptr_t pa);
 #ifdef __cplusplus
 }

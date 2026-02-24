@@ -35,7 +35,7 @@ uintptr_t cpec;
 typedef uint64_t (*syscall_entry)(process_t *ctx);
 
 u64 syscall_malloc(process_t *ctx){
-    void* page_ptr = (void*)mmu_translate(syscall_depth > 1 ? get_proc_by_pid(1)->heap : ctx->heap);
+    void* page_ptr = (void*)mmu_translate(syscall_depth > 1 ? get_proc_by_pid(1)->ttbr : ctx->ttbr, syscall_depth > 1 ? get_proc_by_pid(1)->heap : ctx->heap);
     if ((uintptr_t)page_ptr == 0x0){
         handle_exception("Wrong process heap state", 0);
     }
@@ -50,6 +50,7 @@ uptr syscall_palloc(process_t *ctx){
     size_t size = ctx->PROC_X0;
     void *ptr = palloc(size, MEM_PRIV_USER, MEM_RW, true);
     register_allocation(ctx->alloc_map, ptr, size);
+    kprintf("Regiestered allocation %llx to %llx",ptr,ctx->alloc_map);
     if (ctx->use_va){
         uptr va = ctx->last_va_mapping;
         u64 pages = count_pages(size, PAGE_SIZE);
@@ -63,7 +64,8 @@ uptr syscall_palloc(process_t *ctx){
 }
 
 u64 syscall_pfree(process_t *ctx){
-    free_registered(ctx->alloc_map, (void*)ctx->PROC_X0);
+    void* page_ptr = (void*)mmu_translate(ctx->ttbr, ctx->PROC_X0);
+    free_registered(ctx->alloc_map, page_ptr);
     return 0;
 }
 
@@ -358,7 +360,7 @@ void backtrace(uintptr_t fp, uintptr_t elr, sizedptr debug_line, sizedptr debug_
             if (!decode_crash_address(depth, return_address, debug_line, debug_line_str))
                 kprintf("%i: caller address: %llx", depth, return_address, return_address);
             fp = *(uintptr_t*)fp;
-            if (!mmu_translate(fp)) return;
+            if (!mmu_translate(0, fp)) return;
         } else return;
 
     }

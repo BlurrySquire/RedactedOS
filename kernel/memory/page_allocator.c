@@ -350,7 +350,7 @@ void free_registered(page_index *index, void *ptr){
             }
         }
     }
-    kprint("[ALLOC error] trying to free non-registered page");
+    kprintf("[KALLOC error] trying to free non-registered page %llx from %llx",ptr,index);
 }
 
 void release_page_index(page_index *index){
@@ -381,7 +381,7 @@ void kfree(void* ptr, size_t size) {
     memset32((void*)ptr,0,size);
 
     mem_page *page = (mem_page *)(((uintptr_t)ptr) & ~0xFFFULL);
-    uintptr_t phys_page = mmu_translate((uintptr_t)page);
+    uintptr_t phys_page = mmu_translate(0,(uintptr_t)page);
     uintptr_t off = (uintptr_t)ptr & 0xFFFULL;
     uintptr_t block_phys = phys_page | off;
 

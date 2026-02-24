@@ -142,4 +142,4 @@ system_module bin_module = (system_module){
     .sread = 0,
     .swrite = 0,
     .readdir = 0,
-};//TODO: symlinks to link /bin to /boot/redos/bin
+};//TODO: with dfs, should be possible to map virts for hardcoded commands + physical map to /boot/redos/bin
