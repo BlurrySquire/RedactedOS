@@ -210,7 +210,7 @@ void stop_process(uint16_t pid, int32_t exit_code){
     proc->state = STOPPED;
     proc->exit_code = exit_code;
     if (proc->focused)
-        sys_unset_focus();
+        sys_unset_focus(true);
     if (proc->ttbr) {
         mmu_swap_ttbr(0);
         mmu_swap();

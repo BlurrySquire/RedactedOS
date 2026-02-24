@@ -1,11 +1,7 @@
 #include "launcher.h"
 #include "theme/theme.h"
 #include "syscalls/syscalls.h"
-#include "input/input_dispatch.h"
-#include "process/loading/elf_file.h"
 #include "ui/uno/uno.h"
-#include "process/scheduler.h"
-#include "exceptions/irq.h"
 #include "math/math.h"
 #include "files/helpers.h"
 #include "data/struct/chunk_array.h"
@@ -19,7 +15,7 @@ static gpu_size tile_size;
 static gpu_point selected;
 static bool ready = false;
 static bool rendered_full = false;
-static process_t *active_proc;
+static file active_proc;
 static chunk_array_t *entries;
 static bool process_active = false;
 static draw_ctx ctx;
@@ -89,10 +85,14 @@ void load_entries(){
 
 void draw_desktop(){
     if (!await_gpu()) return;
-    if (active_proc && active_proc->state != STOPPED) return;
+    if (active_proc.id){
+        u16 state = 0;
+        readf(&active_proc,(char*)&state, sizeof(state));
+        if (state != STOPPED)
+            return;
+    } 
     if (process_active){
-        active_proc = 0;
-        sys_focus_current();
+        active_proc.id = 0;
         load_entries();
         memset(&ctx, 0, sizeof(draw_ctx));
         request_draw_ctx(&ctx);
@@ -146,7 +146,6 @@ void draw_full(){
 bool await_gpu(){
     if (!ready){
         request_draw_ctx(&ctx);
-        sys_focus_current();
         gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = (gpu_size){screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
         ready = true;
@@ -160,31 +159,22 @@ void activate_current(){
     if (index < chunk_array_count(entries)){
         launch_entry *entry = chunk_array_get(entries, index);
         if (!slice_lit_match(entry->ext, "red", true)){
-            print("[LAUNCHER] Wrong format %v. Must be a .red package",entry->ext);
+            print("[LAUNCHER error] Wrong format %v. Must be a .red package",entry->ext);
             return;
         }
         string s = string_format("%s/%v.elf",entry->path.data, entry->name);
-        file fd = {};
-        char *file = read_full_file(s.data, 0);
-        // string_free(s);
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
-        print("[LAUNCHER] read file %x",fd.size);
-        disable_interrupt();
-        active_proc = load_elf_file(entry->name.data, entry->path.data, file,fd.size);
-        // release(file);
-        if (!active_proc){
-            print("[LAUNCHER] Failed to load ELF file");
-            rendered_full = false;
+        u16 pid = exec(s.data, 0, 0);
+        string_free(s);
+        string p = string_format("/proc/%i/state",pid);
+        if (!openf(p.data, &active_proc)){
+            string_free(p);
+            print("[LAUNCHER error] failed to get process state");
             return;
         }
-        active_proc->win_id = get_current_proc()->win_id;
-        active_proc->priority = PROC_PRIORITY_FULL;
+        string_free(p);
         process_active = true;
-        sys_set_focus(active_proc->id);
-        active_proc->state = READY;
-        print("[LAUNCHER] process launched");
-        enable_interrupt();
     }
     
 }
@@ -252,9 +242,10 @@ int manage_window(int argc, char* argv[]){
 }
 
 #include "../kprocess_loader.h"
+#include "process/scheduler.h"
 
 process_t* launch_launcher(){
     process_t *p = create_kernel_process("winmanager",manage_window, 0, 0);
-    p->priority = PROC_PRIORITY_FULL;
+    p->priority = PROC_PRIORITY_LOW;
     return p;
 }

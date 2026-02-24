@@ -28,6 +28,7 @@ void get_window_ctx(draw_ctx* out_ctx);
 
 void commit_frame(draw_ctx* frame_ctx, window_frame* frame);
 
+u16 window_fallback_focus(u16 win_id, u16 skip_id);
 void set_window_focus(uint16_t win_id);
 void unset_window_focus();
 
