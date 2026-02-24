@@ -1,9 +1,7 @@
 #include "launcher.h"
-#include "console/kio.h"
-#include "graph/graphics.h"
 #include "theme/theme.h"
-#include "input/input_dispatch.h"
 #include "syscalls/syscalls.h"
+#include "input/input_dispatch.h"
 #include "process/loading/elf_file.h"
 #include "ui/uno/uno.h"
 #include "process/scheduler.h"
@@ -12,6 +10,7 @@
 #include "files/helpers.h"
 #include "data/struct/chunk_array.h"
 #include "memory/memory.h"
+#include "input_keycodes.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
@@ -107,7 +106,7 @@ void draw_desktop(){
     }
     gpu_point old_selected = selected;
     kbd_event event;
-    while (sys_read_event_current(&event)){
+    while (read_event(&event)){
         if (event.type == KEY_PRESS){
             switch (event.key) {
                 case KEY_ENTER:
@@ -145,8 +144,6 @@ void draw_full(){
 }
 
 bool await_gpu(){
-    if (!gpu_ready())
-        return false;
     if (!ready){
         request_draw_ctx(&ctx);
         sys_focus_current();
@@ -163,7 +160,7 @@ void activate_current(){
     if (index < chunk_array_count(entries)){
         launch_entry *entry = chunk_array_get(entries, index);
         if (!slice_lit_match(entry->ext, "red", true)){
-            kprintf("[LAUNCHER] Wrong format %v. Must be a .red package",entry->ext);
+            print("[LAUNCHER] Wrong format %v. Must be a .red package",entry->ext);
             return;
         }
         string s = string_format("%s/%v.elf",entry->path.data, entry->name);
@@ -172,12 +169,12 @@ void activate_current(){
         // string_free(s);
         fb_clear(&ctx, 0);
         commit_draw_ctx(&ctx);
-        kprintf("[LAUNCHER] read file %x",fd.size);
+        print("[LAUNCHER] read file %x",fd.size);
         disable_interrupt();
         active_proc = load_elf_file(entry->name.data, entry->path.data, file,fd.size);
         // release(file);
         if (!active_proc){
-            kprintf("[LAUNCHER] Failed to load ELF file");
+            print("[LAUNCHER] Failed to load ELF file");
             rendered_full = false;
             return;
         }
@@ -186,7 +183,7 @@ void activate_current(){
         process_active = true;
         sys_set_focus(active_proc->id);
         active_proc->state = READY;
-        kprintf("[LAUNCHER] process launched");
+        print("[LAUNCHER] process launched");
         enable_interrupt();
     }
     
@@ -253,6 +250,8 @@ int manage_window(int argc, char* argv[]){
         draw_desktop();
     }
 }
+
+#include "../kprocess_loader.h"
 
 process_t* launch_launcher(){
     process_t *p = create_kernel_process("winmanager",manage_window, 0, 0);
