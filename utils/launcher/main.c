@@ -1,5 +1,3 @@
-#include "launcher.h"
-#include "theme/theme.h"
 #include "syscalls/syscalls.h"
 #include "ui/uno/uno.h"
 #include "math/math.h"
@@ -7,25 +5,41 @@
 #include "data/struct/chunk_array.h"
 #include "memory/memory.h"
 #include "input_keycodes.h"
+#include "string/slice.h"
+#include "package_info.h"
 
 #define MAX_COLS 3
 #define MAX_ROWS 3
 
-static gpu_size tile_size;
-static gpu_point selected;
-static bool ready = false;
-static bool rendered_full = false;
-static file active_proc;
-static chunk_array_t *entries;
-static bool process_active = false;
-static draw_ctx ctx;
+typedef struct {
+    string_slice name;
+    string_slice ext;
+    string path;
+    string file_name;
+    package_info info;
+} launch_entry;
+
+void draw_full();
+bool await_gpu();
+void activate_current();
+void draw_tile(uint32_t column, uint32_t row);
+
+gpu_size tile_size;
+gpu_point selected;
+bool ready = false;
+bool rendered_full = false;
+file active_proc;
+chunk_array_t *entries;
+bool process_active = false;
+draw_ctx ctx;
+i32 bg_color;
+i32 text_color;
 
 void *launcher_page = 0;
 
 void* alloc_launcher(size_t size){
     if (!launcher_page) {
         launcher_page = malloc(PAGE_SIZE);
-        print("Launcher has been given %llx",launcher_page);
     }
     return allocate(launcher_page, size, malloc);
 }
@@ -84,11 +98,10 @@ void load_entries(){
 }
 
 void draw_desktop(){
-    if (!await_gpu()) return;
     if (active_proc.id){
         u16 state = 0;
         readf(&active_proc,(char*)&state, sizeof(state));
-        if (state != STOPPED)
+        if (state)
             return;
     } 
     if (process_active){
@@ -135,7 +148,7 @@ void draw_desktop(){
 
 void draw_full(){
     if (!await_gpu()) return;
-    fb_clear(&ctx, system_theme.bg_color+0x050505);
+    fb_clear(&ctx, bg_color+0x050505);
     for (uint32_t column = 0; column < MAX_COLS; column++){
         for (uint32_t row = 0; row < MAX_ROWS; row++){
             draw_tile(column, row);
@@ -149,6 +162,10 @@ bool await_gpu(){
         gpu_size screen_size = {ctx.width, ctx.height};
         tile_size = (gpu_size){screen_size.width/MAX_COLS - 20, screen_size.height/(MAX_ROWS+1) - 20};
         ready = true;
+        u32 color_buf[2] = {};
+        sreadf("/theme", &color_buf, sizeof(uint64_t));
+        bg_color = color_buf[0];
+        text_color = color_buf[1];
     }
     return ready;
 }
@@ -190,14 +207,14 @@ void draw_tile(uint32_t column, uint32_t row){
     DRAW(
         rectangle(&ctx, (rect_ui_config){
         .border_size = (uint8_t)(sel ? 4 : 0),
-        .border_color = system_theme.bg_color+0x333333,
+        .border_color = bg_color+0x333333,
         .border_padding = 0,
         }, (common_ui_config){
         .point = (int_point){10 + (int32_t)((tile_size.width + 10)*column), 50 + (int32_t)((tile_size.height + 10) *row)},
         .size = {tile_size.width, tile_size.height},
         .horizontal_align = Leading,
         .vertical_align = Top,
-        .background_color = system_theme.bg_color+0x111111,
+        .background_color = bg_color+0x111111,
         .foreground_color = 0
         }), {
         
@@ -212,7 +229,7 @@ void draw_tile(uint32_t column, uint32_t row){
                 .horizontal_align = HorizontalCenter,
                 .vertical_align = VerticalCenter,
                 .background_color = 0,
-                .foreground_color = COLOR_WHITE,
+                .foreground_color = 0xFFFFFFFF,
             });
             string_slice subtext;
             if (entry->info.version.data) subtext = slice_from_literal(entry->info.version.data);
@@ -227,25 +244,16 @@ void draw_tile(uint32_t column, uint32_t row){
                 .horizontal_align = Leading,
                 .vertical_align = Top,
                 .background_color = 0,
-                .foreground_color = COLOR_WHITE,
+                .foreground_color = 0xFFFFFFFF,
             });
         }
     });
 }
 
-int manage_window(int argc, char* argv[]){
+int main(int argc, char* argv[]){
     load_entries();
     while (1)
     {
         draw_desktop();
     }
-}
-
-#include "../kprocess_loader.h"
-#include "process/scheduler.h"
-
-process_t* launch_launcher(){
-    process_t *p = create_kernel_process("winmanager",manage_window, 0, 0);
-    p->priority = PROC_PRIORITY_LOW;
-    return p;
 }

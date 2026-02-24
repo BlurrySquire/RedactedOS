@@ -1,10 +1,11 @@
 #include "terminal.hpp"
 #include "alloc/allocate.h"
-#include "std/std.h"
 #include "input_keycodes.h"
+#include "syscalls/syscalls.h"
+#include "memory/memory.h"
 
 Terminal::Terminal() : Console() {
-    uint32_t color_buf[2] = {};
+    u32 color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
     default_bg_color = color_buf[0];
     bg_color = color_buf[0];

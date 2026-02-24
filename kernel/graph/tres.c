@@ -2,10 +2,10 @@
 #include "input/input_dispatch.h"
 #include "process/scheduler.h"
 #include "memory/memory.h"
-#include "kernel_processes/windows/launcher.h"
 #include "sysregs.h"
 #include "graphics.h"
 #include "ui/graphic_types.h"
+#include "bin/bin_mod.h"
 
 linked_list_t *window_list;
 window_frame *focused_window;
@@ -60,7 +60,7 @@ void create_window(int32_t x, int32_t y, uint32_t width, uint32_t height){
     frame->y = y;
     linked_list_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
-    process_t *p = launch_launcher();
+    process_t *p = execute("/boot/redos/system/launcher.red/launcher.elf", 0, 0);
     p->win_id = frame->win_id;
     frame->pid = p->id;
     sys_set_focus(p->id);
@@ -154,7 +154,7 @@ u16 window_fallback_focus(u16 win_id, u16 skip_id){
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&win_id), PHYS_TO_VIRT_P(find_window));
     if (!node || !node->data) return 0;
     process_t *procs = get_all_processes();
-    for (u16 i = 0; i < MAX_PROCS; i++){
+    for (i16 i = MAX_PROCS - 1; i >= 0; i--){
         if (procs[i].state != STOPPED && procs[i].win_id == win_id && procs[i].id != skip_id){
             window_frame *frame = node->data;
             frame->pid = procs[i].id;
