@@ -235,12 +235,12 @@ int window_system(){
                 case window_mode: {
                     gpu_point end_point = get_mouse_pos();
                     gpu_size size = {abs(end_point.x - start_point.x), abs(end_point.y - start_point.y)};
-                    clicked_frame = 0;
                     click_loc = end_point;
-                    linked_list_for_each(window_list, calc_click);
                     if (size.width < 0x10 && size.height < 0x10){
+                        clicked_frame = 0;
+                        linked_list_for_each(window_list, calc_click);
                         if (clicked_frame) sys_set_focus(clicked_frame->pid);
-                    } else if (!clicked_frame) {
+                    } else {
                         int_point fixed_point = { min(end_point.x,start_point.x),min(end_point.y,start_point.y) };
                         disable_interrupt();
                         create_window(fixed_point.x - global_win_offset.x,fixed_point.y - global_win_offset.y, size.width, size.height);

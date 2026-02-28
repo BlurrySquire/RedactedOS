@@ -50,7 +50,6 @@ uptr syscall_palloc(process_t *ctx){
     size_t size = ctx->PROC_X0;
     void *ptr = palloc(size, MEM_PRIV_USER, MEM_RW, true);
     register_allocation(ctx->alloc_map, ptr, size);
-    kprintf("Regiestered allocation %llx to %llx",ptr,ctx->alloc_map);
     if (ctx->use_va){
         uptr va = ctx->last_va_mapping;
         u64 pages = count_pages(size, PAGE_SIZE);

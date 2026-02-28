@@ -6,6 +6,7 @@
 #include "graphics.h"
 #include "ui/graphic_types.h"
 #include "bin/bin_mod.h"
+#include "math/math.h"
 
 linked_list_t *window_list;
 window_frame *focused_window;
@@ -50,14 +51,73 @@ gpu_point convert_mouse_position(gpu_point point){
     return (gpu_point){};
 }
 
-void create_window(int32_t x, int32_t y, uint32_t width, uint32_t height){
-    if (win_ids == UINT16_MAX) return;
+i32 calculate_distance(i32 ep, i32 es, i32 np, i32 ns, i32 existing){
+    i32 ef_min = ep;
+    i32 ef_max = ep + es;
+    
+    i32 nf_min = np;
+    i32 nf_max = np + ns;
+    
+    if (nf_max < ef_min || nf_min > ef_max) return 0;  
+    
+    i32 a = nf_max - ef_min + 10;
+    i32 b = ef_max - nf_min + 10;
+    
+    if (existing) return existing > 0 ? a : b;
+    
+    return a < b ? a : -b;
+}
+
+int_point window_frame_intersect(window_frame *new_frame, window_frame *existing_frame, int_point existing_move){
+    
+    i32 horizontal = calculate_distance(existing_frame->x, existing_frame->width, new_frame->x, new_frame->width,existing_move.x);
+    i32 vertical = calculate_distance(existing_frame->y, existing_frame->height, new_frame->y, new_frame->height,existing_move.y);
+    return (int_point){ abs(horizontal) < abs(vertical) ? horizontal : 0, abs(horizontal) < abs(vertical) ? 0 : vertical };
+}
+
+void check_collisions(window_frame *frame){
+    int_point move_dist = {};
+    
+    size_t num_wins = linked_list_count(window_list);
+    for (size_t i = 0; i < num_wins; i++){
+        linked_list_node_t *node = linked_list_get(window_list, i);
+        if (!node || !node->data) continue;
+        window_frame *ex_frame = node->data;
+        if (!ex_frame || ex_frame == frame) continue;
+        int_point new_move_dist = window_frame_intersect(ex_frame, frame, move_dist);
+        if (new_move_dist.x){
+            frame->x += new_move_dist.x;
+            move_dist.x = new_move_dist.x;
+            i = 0;
+        }
+        if (new_move_dist.y){
+            frame->y += new_move_dist.y;
+            move_dist.y = new_move_dist.y;
+            i = 0;
+        }
+    }
+}
+
+bool create_window(i32 x, i32 y, u32 width, u32 height){
+    if (win_ids == UINT16_MAX) return false;
+    if (width < 0x100 || height < 0x100) return false;
+    
     window_frame *frame = (window_frame*)zalloc(sizeof(window_frame));
     frame->win_id = win_ids++;
     frame->width = width;
     frame->height = height;
     frame->x = x;
     frame->y = y;
+    
+    check_collisions(frame);
+    
+    draw_ctx *screen_ctx = gpu_get_ctx();
+    int32_t sx = global_win_offset.x + frame->x;
+    int32_t sy = global_win_offset.y + frame->y;
+
+    if (sx >= (int32_t)screen_ctx->width || sy >= (int32_t)screen_ctx->height || sx + frame->width <= 0 || sy + frame->height <= 0) 
+        global_win_offset = (int_point){-frame->x + 10,-frame->y + 10};
+    
     linked_list_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
     process_t *p = execute("/boot/redos/system/launcher.red/launcher.elf", 0, 0);
@@ -65,6 +125,7 @@ void create_window(int32_t x, int32_t y, uint32_t width, uint32_t height){
     frame->pid = p->id;
     sys_set_focus(p->id);
     dirty_windows = true;
+    return true;
 }
 
 void resize_window(uint32_t width, uint32_t height){
@@ -75,6 +136,7 @@ void resize_window(uint32_t width, uint32_t height){
         gpu_resize_window(width, height, &frame->win_ctx);
         frame->width = width;
         frame->height = height;
+        check_collisions(frame);
         dirty_windows = true;
     }
 }
@@ -147,8 +209,6 @@ void commit_frame(draw_ctx* frame_ctx, window_frame* frame){
     frame_ctx->full_redraw = false;
     
 }
-
-#include "console/kio.h"
 
 u16 window_fallback_focus(u16 win_id, u16 skip_id){
     linked_list_node_t *node = linked_list_find(window_list, PHYS_TO_VIRT_P(&win_id), PHYS_TO_VIRT_P(find_window));

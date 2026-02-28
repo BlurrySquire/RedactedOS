@@ -18,7 +18,7 @@ typedef struct {
 
 void init_window_manager();
 
-void create_window(int32_t x, int32_t y, uint32_t width, uint32_t height);
+bool create_window(int32_t x, int32_t y, uint32_t width, uint32_t height);
 
 gpu_point win_to_screen(window_frame *frame, gpu_point point);
 
