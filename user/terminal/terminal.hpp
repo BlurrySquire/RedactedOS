@@ -4,12 +4,14 @@
 #include "shell/shell.h"
 #include "kbd_helper.h"
 #include "environment/env_types.h"
+#include "data/serialize/binary_serial.h"
 
 class Terminal: public Console {
 public:
     Terminal();
     void update();
     shell_handle *term_current_shell;
+    void emit_data(structdef, sizedptr, bool);
 protected:
     bool handle_input();
     void repeat_tick();
@@ -47,7 +49,7 @@ protected:
     uint64_t last_blink_ms;
     bool cursor_visible;
 
-    env_display_type current_display_type = env_display_raw;
+    env_config current_env_config = {env_display_text,env_behavior_scroll};
 
     bool dirty;
 };

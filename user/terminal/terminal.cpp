@@ -3,6 +3,9 @@
 #include "std/std.h"
 #include "input_keycodes.h"
 #include "shell/sheldon/sheldon.h"
+#include "files/helpers.h"
+#include "data/serialize/binary_serial.h"
+#include "environment/env_types.h"
 
 Terminal *default_term;
 
@@ -183,6 +186,26 @@ void Terminal::end_command(){
     set_text_color(default_text_color);
 }
 
+void term_emit_data(structdef field, sizedptr data, bool is_allocated){
+    if (!default_term) return;
+    default_term->emit_data(field,data,is_allocated);
+}
+
+void Terminal::emit_data(structdef field, sizedptr data, bool is_allocated){
+    if (!data.ptr || !data.size) return;
+        switch (field.type) {
+        case binary_type_i8: print("%S: %i",field.name,*(i8*)data.ptr); break;
+        case binary_type_i16: print("%S: %i",field.name,*(i16*)data.ptr); break;
+        case binary_type_i32: print("%S: %i",field.name,*(i32*)data.ptr); break;  
+        case binary_type_i64: print("%S: %i",field.name,*(i64*)data.ptr); break;
+        case binary_type_float: print("%S: %f",field.name,*(float*)data.ptr); break;
+        case binary_type_double: print("%S: %f",field.name,*(double*)data.ptr); break;
+        case binary_type_string: print("%S: %v",field.name,data); break;
+        default: return;
+    }
+    if (is_allocated) release((void*)data.ptr);
+}
+
 bool Terminal::exec_cmd(const char *cmd){
     if (!term_current_shell) return false;
 
@@ -193,17 +216,24 @@ bool Terminal::exec_cmd(const char *cmd){
     int32_t proc = system_focus(cmd, EXEC_MODE_KEEP_FOCUS);
     if (!proc) return false;
 
-    string s1 = string_format("/proc/%i/out", proc);
-    string s2 = string_format("/proc/%i/state", proc);
-    string s3 = string_format("/environments/%i/display", proc);
+    string output_string = string_format("/proc/%i/out", proc);
+    string state_string = string_format("/proc/%i/state", proc);
+    string config_string = string_format("/environments/%i/config", proc);
+    string data_string = string_format("/environments/%i/data", proc);
+    string structure_string = string_format("/environments/%i/structure", proc);
+    
+    file out_fd, state_fd, display_fd, data_fd;
+    openf(output_string.data, &out_fd);
+    string_free(output_string);
+    FS_RESULT state_res = openf(state_string.data, &state_fd);
+    string_free(state_string);
+    openf(config_string.data, &display_fd);
+    string_free(config_string);
+    openf(data_string.data, &data_fd);
+    string_free(data_string);
 
-    file out_fd, state_fd, display_fd;
-    openf(s1.data, &out_fd);
-    string_free(s1);
-    FS_RESULT state_res = openf(s2.data, &state_fd);
-    string_free(s2);
-    openf(s3.data, &display_fd);
-    string_free(s3);
+    binary_serializer proc_serializer = {};
+    
     if (state_res != FS_RESULT_SUCCESS){
         print("Failed to open process state");
         return true;
@@ -218,7 +248,9 @@ bool Terminal::exec_cmd(const char *cmd){
         return true;
     }
 
-    env_display_type proc_display_type = env_display_raw;
+    char* data_buf = (char*)zalloc(0x1000);
+
+    env_config proc_env_config = {env_display_text,env_behavior_scroll};
     do {
         kbd_event event;
         if (read_event(&event)){
@@ -231,15 +263,29 @@ bool Terminal::exec_cmd(const char *cmd){
         buf[n] = 0;
         if (n){
             for (size_t i = 0; i < n; i++){
-                if (buf[i] == '\['){
-                    if (!display_fd.id || readf(&display_fd, (char*)&proc_display_type, sizeof(env_display_type)) != sizeof(env_display_type)) proc_display_type = env_display_raw;
-                    if (proc_display_type != current_display_type){
-                        put_string("Switch to display type and read from correct output");
-                        current_display_type = proc_display_type;
-                    }
+                if (buf[i] == ENV_CMD_CONFIG_SYNC){
+                    if (!display_fd.id || readf(&display_fd, (char*)&proc_env_config, sizeof(env_config)) != sizeof(env_config)) proc_env_config = {env_display_text,env_behavior_scroll};
+                    if (proc_env_config.behavior != current_env_config.behavior)
+                        current_env_config.behavior = proc_env_config.behavior;
+                    if (proc_env_config.display_type != current_env_config.display_type)
+                        current_env_config.display_type = proc_env_config.display_type;
+                } if (buf[i] == ENV_CMD_STRUCT_SYNC){
+                    size_t struct_size = 0;
+                    char* struct_buf = read_full_file(structure_string.data, &struct_size);
+                    if (struct_size && struct_buf){
+                        bin_ser_define_structure(&proc_serializer, struct_buf, struct_size);
+                    } else print("Invalid structure");
+                } if (buf[i] == ENV_CMD_DATA_SYNC){
+                    //TODO: update/sync/tell to update a file descriptor
+                    //TODO: buffer map to file functionality
+                    if (current_env_config.behavior == env_behavior_wipe) clear();
+                    size_t data_size = readf(&data_fd, data_buf, 0x1000);
+                    if (data_size && data_buf){
+                        if (!bin_ser_deserialize(&proc_serializer, (sizedptr){(uptr)data_buf,data_size}, term_emit_data)) print("Data deserialization failed");
+                    } else print("Invalid data");
                 } else if (buf[i] == '\a'){
                     print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-                } else if (current_display_type == env_display_raw) put_char(buf[i]);
+                } else if (current_env_config.display_type == env_display_text) put_char(buf[i]);
             }
             flush(dctx);
         }

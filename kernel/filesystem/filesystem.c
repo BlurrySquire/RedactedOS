@@ -185,14 +185,20 @@ size_t simple_read(module_root *root, const char *path, void *buf, size_t size){
     return res;
 }
 
-size_t simple_write(module_root *root, const char *path, const void *buf, size_t size){
+size_t simple_write(module_root *root, const char *path, const void *buf, size_t size, bool append){
     file fd = {};
     FS_RESULT ores = open_file(root, path, &fd);
     if (ores != FS_RESULT_SUCCESS){
         kprintf("[FS error] Failed to open file for simple write (%i)",ores);
         return 0;
     }
+    if (append){
+        seek(&fd, fd.size, SEEK_ABSOLUTE);
+    }
     size_t res = write_file(&fd, (char*)buf, size);
+    if (append){
+        truncate(&fd, size);
+    }
     close_file(&fd);
     return res;
 }
