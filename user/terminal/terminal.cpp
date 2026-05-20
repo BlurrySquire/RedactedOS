@@ -9,9 +9,29 @@
 
 Terminal *default_term;
 
-void term_put_slice(shell_handle *handle, string_slice slice){
+void term_put_char(shell_handle *handle, char c){
     if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
-    default_term->put_slice(slice);
+    default_term->put_char(c);
+}
+
+void term_clear(shell_handle *handle){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->clear();
+}
+
+void term_flush(shell_handle *handle){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->refresh();
+}
+
+void term_bell(shell_handle *handle){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->bell();
+}
+
+void term_ascii_cmd(shell_handle *handle, u16 proc_id, char cmd){
+    if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
+    default_term->interpret_cmd_code(cmd, proc_id);
 }
 
 Terminal::Terminal() : Console() {
@@ -56,7 +76,11 @@ Terminal::Terminal() : Console() {
 
 shell_handle* Terminal::create_shell(){
     return create_sheldon((shell_bindings){
-        .console_output = term_put_slice,
+        .console_output = term_put_char,
+        .console_flush = term_flush,
+        .console_clean = term_clear,
+        .console_bell = term_bell,
+        .console_ascii_cmd = term_ascii_cmd,
     }, 0);
 }
 
@@ -211,106 +235,14 @@ bool Terminal::exec_cmd(const char *cmd){
 
     current_shell = term_current_shell;
     
-    if (run_cmd(term_current_shell, slice_from_literal(cmd))) return true;
+    if (run_cmd(current_shell, slice_from_literal(cmd))) return true;
     
-    int32_t proc = system_focus(cmd, EXEC_MODE_KEEP_FOCUS);
-    if (!proc) return false;
-
-    string output_string = string_format("/proc/%i/out", proc);
-    string state_string = string_format("/proc/%i/state", proc);
-    string config_string = string_format("/environments/%i/config", proc);
-    string data_string = string_format("/environments/%i/data", proc);
-    string structure_string = string_format("/environments/%i/structure", proc);
-    
-    file out_fd, state_fd, display_fd, data_fd;
-    openf(output_string.data, &out_fd);
-    string_free(output_string);
-    FS_RESULT state_res = openf(state_string.data, &state_fd);
-    string_free(state_string);
-    openf(config_string.data, &display_fd);
-    string_free(config_string);
-    openf(data_string.data, &data_fd);
-    string_free(data_string);
-
-    binary_serializer proc_serializer = {};
-    
-    if (state_res != FS_RESULT_SUCCESS){
-        print("Failed to open process state");
-        return true;
-    }
-
-    int state = 1;
-    size_t amount = 0x100;
-    char *buf = (char*)zalloc(amount + 1);
-    if (!buf) {
-        closef(&out_fd);
-        closef(&state_fd);
-        return true;
-    }
-
-    char* data_buf = (char*)zalloc(0x1000);
-
-    env_config proc_env_config = {env_display_text,env_behavior_scroll};
-    do {
-        kbd_event event;
-        if (read_event(&event)){
-            if (!handle_modifier(&event)){
-                char cmd = hid_to_char(event.key, current_modifier);
-                if (event.type == KEY_PRESS) interpret_cmd_code(cmd, proc);
-            }
-        }
-        size_t n = readf(&out_fd, buf, amount);
-        buf[n] = 0;
-        if (n){
-            for (size_t i = 0; i < n; i++){
-                if (buf[i] == ENV_CMD_CONFIG_SYNC){
-                    if (!display_fd.id || readf(&display_fd, (char*)&proc_env_config, sizeof(env_config)) != sizeof(env_config)) proc_env_config = {env_display_text,env_behavior_scroll};
-                    if (proc_env_config.behavior != current_env_config.behavior)
-                        current_env_config.behavior = proc_env_config.behavior;
-                    if (proc_env_config.display_type != current_env_config.display_type)
-                        current_env_config.display_type = proc_env_config.display_type;
-                } if (buf[i] == ENV_CMD_STRUCT_SYNC){
-                    size_t struct_size = 0;
-                    char* struct_buf = read_full_file(structure_string.data, &struct_size);
-                    if (struct_size && struct_buf){
-                        bin_ser_define_structure(&proc_serializer, struct_buf, struct_size);
-                    } else print("Invalid structure");
-                } if (buf[i] == ENV_CMD_DATA_SYNC){
-                    //TODO: update/sync/tell to update a file descriptor
-                    //TODO: buffer map to file functionality
-                    if (current_env_config.behavior == env_behavior_wipe) clear();
-                    size_t data_size = readf(&data_fd, data_buf, 0x1000);
-                    if (data_size && data_buf){
-                        if (!bin_ser_deserialize(&proc_serializer, (sizedptr){(uptr)data_buf,data_size}, term_emit_data)) print("Data deserialization failed");
-                    } else print("Invalid data");
-                } else if (buf[i] == '\a'){
-                    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-                } else if (current_env_config.display_type == env_display_text) put_char(buf[i]);
-            }
-            flush(dctx);
-        }
-
-        seek(&state_fd, 0, SEEK_ABSOLUTE);
-        if (readf(&state_fd, (char*)&state, sizeof(int)) != sizeof(int)) state = 0;
-        // print("Display type %i",proc_display_type);
-        // if (state && !n) msleep(20);
-    } while (state);
-
-    for (;;) {
-        size_t n = readf(&out_fd, buf, amount);
-        if (!n) break;
-        buf[n] = 0;
-        put_string(buf);
-    }
-
-    release(buf);
-    closef(&out_fd);
-    closef(&state_fd);
-
-    string exit_msg = string_format("\nProcess %i ended.", proc);
-    put_string(exit_msg.data);
-    string_free(exit_msg);
     return true;
+}
+
+void Terminal::bell(){
+    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    refresh();
 }
 
 void Terminal::run_command(){
@@ -472,6 +404,10 @@ draw_ctx* Terminal::get_ctx(){
 
 void Terminal::flush(draw_ctx *ctx){
     commit_draw_ctx(ctx);
+}
+
+void Terminal::refresh(){
+    flush(get_ctx());
 }
 
 bool Terminal::screen_ready(){

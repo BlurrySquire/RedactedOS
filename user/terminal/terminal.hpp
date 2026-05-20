@@ -12,6 +12,9 @@ public:
     void update();
     shell_handle *term_current_shell;
     void emit_data(structdef, sizedptr, bool);
+    void refresh();
+    void bell();
+    bool interpret_cmd_code(char code, u16 proc);
 protected:
     bool handle_input();
     void repeat_tick();
@@ -32,8 +35,6 @@ protected:
 
     shell_handle* create_shell();
 
-    bool interpret_cmd_code(char code, u16 proc);
-
     bool command_running;
 
     static constexpr uint32_t input_max = 1024;
@@ -48,8 +49,6 @@ protected:
 
     uint64_t last_blink_ms;
     bool cursor_visible;
-
-    env_config current_env_config = {env_display_text,env_behavior_scroll};
 
     bool dirty;
 };
