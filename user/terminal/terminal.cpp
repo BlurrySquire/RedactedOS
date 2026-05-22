@@ -6,6 +6,7 @@
 #include "files/helpers.h"
 #include "data/serialize/binary_serial.h"
 #include "environment/env_types.h"
+#include "utils/embedded_fmt/tcf.h"
 
 Terminal *default_term;
 
@@ -38,12 +39,10 @@ Terminal::Terminal() : Console() {
     default_term = this;
     uint32_t color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
-    default_bg_color = color_buf[0];
-    bg_color = color_buf[0];
+    if ((color_buf[0] & 0xFF000000) == 0) color_buf[0] |= 0xFF000000;
+    current_format.default_bg_color = color_buf[0];
+    current_format.current_bg_color = color_buf[0];
     current_format.default_text_color = color_buf[1];
-    if ((default_bg_color & 0xFF000000) == 0) default_bg_color |= 0xFF000000;
-
-    bg_color = default_bg_color;
 
     char_scale = 2;
     prompt_length = 2;
@@ -63,6 +62,7 @@ Terminal::Terminal() : Console() {
     dirty = false;
 
     term_current_shell = create_shell();
+    init_tcf(&current_format);
     put_string("> ");
     redraw_input_line();
     if (dirty) {
@@ -98,36 +98,24 @@ void Terminal::update(){
 void Terminal::cursor_set_visible(bool visible){
     if (visible == cursor_visible) {
         if (!visible) return;
-        if (last_drawn_cursor_x == (int32_t)cursor_x && last_drawn_cursor_y == (int32_t)cursor_y) return;
+        if (last_drawn_cursor_x == (int32_t)current_format.cursor_x && last_drawn_cursor_y == (int32_t)current_format.cursor_y) return;
     }
 
-    uint32_t cw = (uint32_t)char_scale * CHAR_SIZE;
-    uint32_t lh = (uint32_t)char_scale * CHAR_SIZE * 2;
     cursor_visible = visible;
 
     if (last_drawn_cursor_x >= 0 && last_drawn_cursor_y >= 0) {
         if ((uint32_t)last_drawn_cursor_x < columns && (uint32_t)last_drawn_cursor_y < rows) {
-            fb_fill_rect(dctx,
-                (uint32_t)last_drawn_cursor_x * cw,
-                (uint32_t)last_drawn_cursor_y * lh,
-                cw, lh, bg_color
-            );
-
-            char *prev_line = row_data + (((scroll_row_offset + (uint32_t)last_drawn_cursor_y) % rows) * columns);
-            char ch = prev_line[last_drawn_cursor_x];
-            if (ch) {
-                uint32_t py = ((uint32_t)last_drawn_cursor_y * lh) + (lh / 2);
-                fb_draw_char(dctx, (uint32_t)last_drawn_cursor_x * cw, py, ch, char_scale, current_format.current_text_color);
-            }
+            char *prev_line = &row_data[((scroll_row_offset + (u32)last_drawn_cursor_y) % rows) * columns];
+            render_glyph(last_drawn_cursor_x*char_width, last_drawn_cursor_y * line_height, prev_line[last_drawn_cursor_x], current_format.current_text_color, current_format.current_bg_color, true);
         }
         last_drawn_cursor_x = -1;
         last_drawn_cursor_y = -1;
     }
 
     if (cursor_visible) {
-        fb_fill_rect(dctx, cursor_x * cw, cursor_y * lh, cw, lh, 0xFFFFFFFF);
-        last_drawn_cursor_x = (int32_t)cursor_x;
-        last_drawn_cursor_y = (int32_t)cursor_y;
+        fb_fill_rect(dctx, current_format.cursor_x * char_width, current_format.cursor_y * line_height, char_width, line_height, 0xFFFFFFFF);
+        last_drawn_cursor_x = (int32_t)current_format.cursor_x;
+        last_drawn_cursor_y = (int32_t)current_format.cursor_y;
     }
 
     dirty = true;
@@ -146,9 +134,9 @@ void Terminal::redraw_input_line(){
     uint32_t cw = (uint32_t)char_scale * CHAR_SIZE;
     uint32_t lh = (uint32_t)char_scale * CHAR_SIZE * 2;
 
-    fb_fill_rect(dctx, 0, cursor_y * lh, columns * cw, lh, bg_color);
+    fb_fill_rect(dctx, 0, current_format.cursor_y * lh, columns * cw, lh, current_format.current_bg_color);
 
-    char* line = row_data + (((scroll_row_offset + cursor_y) % rows) * columns);
+    char* line = row_data + (((scroll_row_offset + current_format.cursor_y) % rows) * columns);
     memset(line, 0, columns);
 
     if (columns == 0) return;
@@ -164,13 +152,13 @@ void Terminal::redraw_input_line(){
     for (uint32_t i = 0; i < draw_len; i++) line[prompt_length + i] = input_buf[i];
     line[prompt_length + draw_len] = 0;
 
-    uint32_t ypix = (cursor_y * lh) + (lh / 2);
+    uint32_t ypix = (current_format.cursor_y * lh) + (lh / 2);
     fb_draw_char(dctx, 0, ypix, '>', char_scale, current_format.current_text_color);
     fb_draw_char(dctx, cw, ypix, ' ', char_scale, current_format.current_text_color);
     for (uint32_t i = 0; i < draw_len; i++) fb_draw_char(dctx, (prompt_length + i) * cw, ypix, input_buf[i], char_scale, current_format.current_text_color);
 
     if (input_cursor > draw_len) input_cursor = draw_len;
-    cursor_x = (uint32_t)prompt_length + input_cursor;
+    current_format.cursor_x = (uint32_t)prompt_length + input_cursor;
 
     last_blink_ms = get_time();
     cursor_set_visible(true);
@@ -237,7 +225,7 @@ bool Terminal::exec_cmd(const char *cmd){
 }
 
 void Terminal::bell(){
-    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    put_string("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     refresh();
 }
 
@@ -321,7 +309,7 @@ bool Terminal::handle_input(){
 
     if (key == KEY_LEFT) {
         if (input_cursor) input_cursor--;
-        cursor_x = (uint32_t)prompt_length + input_cursor;
+        current_format.cursor_x = (uint32_t)prompt_length + input_cursor;
         last_blink_ms = get_time();
         cursor_set_visible(true);
         return true;
@@ -329,7 +317,7 @@ bool Terminal::handle_input(){
 
     if (key == KEY_RIGHT) {
         if (input_cursor < input_len) input_cursor++;
-        cursor_x = (uint32_t)prompt_length + input_cursor;
+        current_format.cursor_x = (uint32_t)prompt_length + input_cursor;
         last_blink_ms = get_time();
         cursor_set_visible(true);
         return true;
@@ -403,7 +391,7 @@ void Terminal::flush(draw_ctx *ctx){
 }
 
 void Terminal::refresh(){
-    flush(get_ctx());
+    flush(dctx);
 }
 
 bool Terminal::screen_ready(){

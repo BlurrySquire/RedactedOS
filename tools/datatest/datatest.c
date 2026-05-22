@@ -30,9 +30,8 @@ void read_deser_data(structdef field, sizedptr data, bool is_alloc){
     if (is_alloc) release((void*)data.ptr);
 }
 
-int main(int argc, const char* argv[]){
-    print("This should display in raw text");
-    // set_environment_config((env_config){env_display_document,env_behavior_wipe});
+void structured(){
+    set_environment_config((env_config){env_display_document,env_behavior_wipe});
 
     structdef defintions[5] = {
         { .type = binary_type_i32,      .name = string_from_literal("number") },
@@ -60,20 +59,36 @@ int main(int argc, const char* argv[]){
 
     send_environment_data(buf.buffer,buf.buffer_size);
 
-    print("{color:666000 data}");
-    print("{color:666000 S:}");
-    // msleep(3000);
-    print("{color:666000 Second Serialized data}");
-
+    msleep(3000);
+    
     tesdata.modified = SLICE_LIT("Just now");
 
     buf = bin_ser_serialize(&serializer, &tesdata, sizeof(tesdata), 1);
 
     send_environment_data(buf.buffer,buf.buffer_size);
+}
 
-    // for (size_t i = 0; i < buf.buffer_size; i++){
-    //     print("%x",((char*)buf.buffer)[i]);
-    // }
+void tui(){
+    put("{wipe}");
+    put("{cursor:10,10}");
+    for (int i = 0; i < 5; i++){
+        put("{cursor:10,%i}{bg:fcba03 *}",10+i);
+        put("{cursor:20,%i}{bg:fcba03 *}",10+i);
+    }
+    put("{cursor:9,17}{bg:fcba03 *}");
+    put("{cursor:21,17}{bg:fcba03 *}");
+    put("{cursor:10,18}");
+    for (int i = 0; i <= 10; i++){
+        put("{bg:fcba03 *}");
+    }
+}
+
+int main(int argc, const char* argv[]){
+    print("This should display in raw text");
     
-    while (1){}
+    tui();
+    
+    // while (1){}
+
+    return 0;
 }
