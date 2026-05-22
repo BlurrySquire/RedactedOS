@@ -40,13 +40,10 @@ Terminal::Terminal() : Console() {
     sreadf("/theme", &color_buf, sizeof(uint64_t));
     default_bg_color = color_buf[0];
     bg_color = color_buf[0];
-    default_text_color = color_buf[1];
+    current_format.default_text_color = color_buf[1];
     if ((default_bg_color & 0xFF000000) == 0) default_bg_color |= 0xFF000000;
-    if ((default_text_color & 0xFF000000) == 0) default_text_color |= 0xFF000000;
 
     bg_color = default_bg_color;
-    text_color = default_text_color;
-    if (text_color == bg_color) text_color = default_text_color = 0xFFFFFFFF;
 
     char_scale = 2;
     prompt_length = 2;
@@ -120,7 +117,7 @@ void Terminal::cursor_set_visible(bool visible){
             char ch = prev_line[last_drawn_cursor_x];
             if (ch) {
                 uint32_t py = ((uint32_t)last_drawn_cursor_y * lh) + (lh / 2);
-                fb_draw_char(dctx, (uint32_t)last_drawn_cursor_x * cw, py, ch, char_scale, text_color);
+                fb_draw_char(dctx, (uint32_t)last_drawn_cursor_x * cw, py, ch, char_scale, current_format.current_text_color);
             }
         }
         last_drawn_cursor_x = -1;
@@ -168,9 +165,9 @@ void Terminal::redraw_input_line(){
     line[prompt_length + draw_len] = 0;
 
     uint32_t ypix = (cursor_y * lh) + (lh / 2);
-    fb_draw_char(dctx, 0, ypix, '>', char_scale, text_color);
-    fb_draw_char(dctx, cw, ypix, ' ', char_scale, text_color);
-    for (uint32_t i = 0; i < draw_len; i++) fb_draw_char(dctx, (prompt_length + i) * cw, ypix, input_buf[i], char_scale, text_color);
+    fb_draw_char(dctx, 0, ypix, '>', char_scale, current_format.current_text_color);
+    fb_draw_char(dctx, cw, ypix, ' ', char_scale, current_format.current_text_color);
+    for (uint32_t i = 0; i < draw_len; i++) fb_draw_char(dctx, (prompt_length + i) * cw, ypix, input_buf[i], char_scale, current_format.current_text_color);
 
     if (input_cursor > draw_len) input_cursor = draw_len;
     cursor_x = (uint32_t)prompt_length + input_cursor;
@@ -207,7 +204,6 @@ void Terminal::end_command(){
     prompt_length = 2;
 
     set_input_line("");
-    set_text_color(default_text_color);
 }
 
 void term_emit_data(structdef field, sizedptr data, bool is_allocated){

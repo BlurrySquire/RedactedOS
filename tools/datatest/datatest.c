@@ -32,7 +32,7 @@ void read_deser_data(structdef field, sizedptr data, bool is_alloc){
 
 int main(int argc, const char* argv[]){
     print("This should display in raw text");
-    set_environment_config((env_config){env_display_document,env_behavior_wipe});
+    // set_environment_config((env_config){env_display_document,env_behavior_wipe});
 
     structdef defintions[5] = {
         { .type = binary_type_i32,      .name = string_from_literal("number") },
@@ -60,15 +60,16 @@ int main(int argc, const char* argv[]){
 
     send_environment_data(buf.buffer,buf.buffer_size);
 
-    msleep(3000);
+    print("{color:666000 data}");
+    print("{color:666000 S:}");
+    // msleep(3000);
+    print("{color:666000 Second Serialized data}");
 
     tesdata.modified = SLICE_LIT("Just now");
 
     buf = bin_ser_serialize(&serializer, &tesdata, sizeof(tesdata), 1);
 
     send_environment_data(buf.buffer,buf.buffer_size);
-
-    print("Serialized data");
 
     // for (size_t i = 0; i < buf.buffer_size; i++){
     //     print("%x",((char*)buf.buffer)[i]);
