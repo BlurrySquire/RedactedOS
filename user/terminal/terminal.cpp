@@ -30,7 +30,7 @@ void term_bell(shell_handle *handle){
     default_term->bell();
 }
 
-void term_ascii_cmd(shell_handle *handle, u16 proc_id, char cmd){
+void term_ascii_cmd(shell_handle *handle, char cmd, u16 proc_id){
     if (!default_term || (default_term->term_current_shell && default_term->term_current_shell != handle)) return;
     default_term->interpret_cmd_code(cmd, proc_id);
 }
