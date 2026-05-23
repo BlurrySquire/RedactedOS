@@ -33,6 +33,11 @@ RamFBGPUDriver* RamFBGPUDriver::try_init(gpu_size preferred_screen_size){
 
 bool RamFBGPUDriver::init(gpu_size preferred_screen_size){
     file = {};
+//TODO: This should handle retina, but there's no simple way AFAIK to detect host system and I cba editing Makefile
+#if QEMU
+    preferred_screen_size.width /= 2;
+    preferred_screen_size.height /= 2;
+#endif
     screen_size = preferred_screen_size;
 
     if (!screen_size.width || !screen_size.height) return false;
