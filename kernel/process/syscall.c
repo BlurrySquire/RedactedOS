@@ -218,15 +218,9 @@ u64 syscall_halt(process_t *ctx){
     return 0;
 }
 
-//TODO exec now has an argument to decide whether the spawned proc should take control of input or whether the caller should keep it
-//rn this is the cleanest way to make launch policy explicit, avoiding that a terminal attached child could steal input focus from the caller, waiting for return after spawn or hardcoding the policy by process name
-//the more standard design would be to handle this through a proper control terminal model later instead of deciding focus in exec
-//https://pubs.opengroup.org/onlinepubs/9699919799.orig/basedefs/V1_chap11.html
-//https://pubs.opengroup.org/onlinepubs/007904975/functions/tcsetpgrp.html
-//https://man7.org/linux/man-pages/man7/credentials.7.html
-///https://en.wikipedia.org/wiki/Job_control_(Unix)
 u64 syscall_exec(process_t *ctx){
     SYSCALL_STR(prog_name, PROC_X0, false);
+    //TODO: prog-name *might* need to be resolved in fs if it contains /
     int argc = (int)ctx->PROC_X1;
     uintptr_t uargv = (uintptr_t)ctx->PROC_X2;
     uint32_t mode = (uint32_t)ctx->PROC_X3;
