@@ -352,13 +352,14 @@ u64 syscall_socket_close(process_t *ctx){
 }
 
 #define ISOLATEDFS
+#define ISOLATEDFS_ALLOW_KFS true
 
 u64 syscall_openf(process_t *ctx){
 #ifdef ISOLATEDFS
     SYSCALL_STR(path, PROC_X0, false);
     SYSCALL_ARG(file,descriptor,PROC_X1, true);
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length) return 0;
     FS_RESULT res = open_file(&rootfs, s.data, descriptor);
     string_free(s);
@@ -395,7 +396,7 @@ u64 syscall_sreadf(process_t *ctx){
     SYSCALL_ARG_SIZE(void, buf, size, PROC_X1, false);
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length) return 0;
     size_t ret = simple_read(&rootfs, s.data, buf, size);
     string_free(s);
@@ -412,7 +413,7 @@ u64 syscall_swritef(process_t *ctx){
     bool append = (bool)ctx->PROC_X3;
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length) return 0;
     size_t ret = simple_write(&rootfs, s.data, buf, size, append);
     string_free(s);
@@ -435,7 +436,7 @@ u64 syscall_dir_list(process_t *ctx){
     SYSCALL_ARG(u64,offset,PROC_X3, true);
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length || strncmp(s.data,"/",s.length) == 0){
         size_t ret = 0;
         fs_dir_list_helper helper = create_dir_list_helper(buf, size);
@@ -459,7 +460,7 @@ u64 syscall_stat(process_t *ctx){
     SYSCALL_ARG(fs_stat,out_stat,PROC_X1, true);
 #ifdef ISOLATEDFS
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, ctx->permissions.fs_id, &rootfs, ISOLATEDFS_ALLOW_KFS);
     if (!s.data || !s.length){
         return root_stat(path, out_stat);
     }

@@ -140,7 +140,7 @@ int32_t socket_close(SocketHandle *handle){
 
 FS_RESULT openf(const char* path, file* descriptor){
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs, true);
     if (!s.data || !s.length) return open_file(kernel_fs(), path, descriptor);;
     FS_RESULT res = open_file(&rootfs, s.data, descriptor);
     string_free(s);
@@ -157,7 +157,7 @@ size_t writef(file *descriptor, const char* buf, size_t size){
 
 size_t swritef(const char* path, const void* buf, size_t size, bool append){
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs, true);
     if (!s.data || !s.length) return simple_write(kernel_fs(), path, buf, size, append);
     size_t ret = simple_write(&rootfs, s.data, buf, size, append);
     string_free(s);
@@ -166,7 +166,7 @@ size_t swritef(const char* path, const void* buf, size_t size, bool append){
 
 size_t sreadf(const char *path, void* buf, size_t size){
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs, true);
     if (!s.data || !s.length) return simple_read(kernel_fs(), path, buf, size);
     size_t ret = simple_read(&rootfs, s.data, buf, size);
     string_free(s);
@@ -183,7 +183,7 @@ void closef(file *descriptor){
 
 size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs, true);
     if (!s.data || !s.length || strncmp(s.data,"/",s.length) == 0){
         size_t ret = 0;
         fs_dir_list_helper helper = create_dir_list_helper(buf, size);
@@ -201,7 +201,7 @@ size_t dir_list(const char *path, void *buf, size_t size, u64 *offset){
 
 bool statf(const char *path, fs_stat *out_stat){
     module_root rootfs = {}; 
-    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs);
+    string s = resolve_isolated_path(path, get_current_proc()->permissions.fs_id, &rootfs, true);
     if (!s.data || !s.length){
         return root_stat(path, out_stat);
     }
