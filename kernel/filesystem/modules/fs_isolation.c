@@ -42,7 +42,7 @@ size_t list_root(void* buf, size_t size, uint64_t *offset){
 }
 
 string resolve_isolated_path(const char *path, u64 id, module_root *resolved){
-    if (!path || !resolved) return (string){};
+    if (!path || !resolved || !id) return (string){};
     hash_map_t *localfs = get_fs_for_id(id);
     const char *localpath = path;
     system_module *localmod = get_module_from(localfs, &localpath);
