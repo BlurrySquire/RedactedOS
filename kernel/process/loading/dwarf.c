@@ -276,13 +276,13 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 		};
 		if (ptr + sizeof(dwarf_debug_line_header) > end_section) return (debug_line_info){};
 		dwarf_debug_line_header *hdr = (dwarf_debug_line_header*)ptr;
-		uintptr_t unit_end = (uptr)&hdr->unit_length + sizeof(hdr->unit_length) + hdr->unit_length;
+		uintptr_t unit_end = (uptr)&hdr->unit_length + sizeof(hdr->unit_length) + read_unaligned32(&hdr->unit_length);
 		if (unit_end <= ptr || unit_end > end_section) return (debug_line_info){};
 		if (!hdr->line_range || !hdr->opcode_base) return (debug_line_info){};
 
 		state.is_stmt = hdr->default_is_stmt;
 
-		if (hdr->version != 5) {
+		if (read_unaligned16(&hdr->version) != 5) {
 			kprintf("Only DWARF version 5 is supported");
 			return (debug_line_info){};
 		}
@@ -302,7 +302,7 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 		// 	if (files[i]) kprintf("File [%i] = %s",i,files[i]);
 		// }
 
-		ptr = (uintptr_t)&hdr->header_length + sizeof(hdr->header_length) + hdr->header_length;
+		ptr = (uintptr_t)&hdr->header_length + sizeof(hdr->header_length) + read_unaligned32(&hdr->header_length);
 		
 		uint8_t *end = (uint8_t*)unit_end;
 		uint8_t *p = (uint8_t*)ptr;
