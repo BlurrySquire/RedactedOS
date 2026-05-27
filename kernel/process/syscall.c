@@ -419,7 +419,7 @@ u64 syscall_swritef(process_t *ctx){
     string_free(s);
     return ret;
 #else
-    return simple_write(kernel_fs(), path, buf, size);
+    return simple_write(kernel_fs(), path, buf, size, append);
 #endif
 }
 
