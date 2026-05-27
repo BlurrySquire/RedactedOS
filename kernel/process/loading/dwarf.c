@@ -430,6 +430,22 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 			if (emit_row) {
 				// kprintf("Address %#x line %i of file %s", state.address, state.line, files[state.file]);
 
+				if (state.address == address) {
+				    return (debug_line_info){
+						.address = address,
+						.line = state.line,
+						.column = state.column,
+						.file = (state.file < DWARF_ENTRY_CAP && files[state.file]) ? files[state.file] : unknown_file
+					};
+				} else if (state.address > address && previous_state.address && previous_state.address < address) {
+				    return (debug_line_info){
+						.address = address,
+						.line = previous_state.line,
+						.column = previous_state.column,
+						.file =(previous_state.file < DWARF_ENTRY_CAP && files[previous_state.file]) ? files[previous_state.file] : unknown_file
+					};
+				}
+
 				if (state.end_sequence) {
 					// kprintf(">>>>>>Resetting state");
 					state = (dwarf_debug_line_state_machine) {
@@ -445,22 +461,6 @@ debug_line_info dwarf_decode_lines(uintptr_t ptr, size_t size, uintptr_t debug_l
 						.epilogue_begin = false,
 						.isa = 0,
 						.discriminator = 0
-					};
-				}
-
-				if (state.address == address) {
-				    return (debug_line_info){
-						.address = address,
-						.line = state.line,
-						.column = state.column,
-						.file = (state.file < DWARF_ENTRY_CAP && files[state.file]) ? files[state.file] : unknown_file
-					};
-				} else if (state.address > address && previous_state.address && previous_state.address < address) {
-				    return (debug_line_info){
-						.address = address,
-						.line = previous_state.line,
-						.column = previous_state.column,
-						.file =(previous_state.file < DWARF_ENTRY_CAP && files[previous_state.file]) ? files[previous_state.file] : unknown_file
 					};
 				}
 
