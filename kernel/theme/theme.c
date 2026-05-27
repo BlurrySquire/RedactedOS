@@ -39,6 +39,7 @@ system_config_t system_config = {
     .system_name = SYSTEM_NAME,
     .app_directory = "boot",
     .use_net = false,
+    .preferred_screen_size = {1920,1080}
 };
 
 gpu_point parse_gpu_point(char *value, size_t value_len){
@@ -47,6 +48,14 @@ gpu_point parse_gpu_point(char *value, size_t value_len){
     uint32_t x = parse_int64(value, cursor-value-1) & UINT32_MAX;
     uint32_t y = parse_int64(cursor, value_len-(cursor-value)) & UINT32_MAX;
     return (gpu_point){x,y};
+}
+
+gpu_size parse_gpu_size(char *value, size_t value_len){
+    const char *cursor = value;
+    cursor = seek_to(cursor, ',');
+    uint32_t x = parse_int64(value, cursor-value-1) & UINT32_MAX;
+    uint32_t y = parse_int64(cursor, value_len-(cursor-value)) & UINT32_MAX;
+    return (gpu_size){x,y};
 }
 
 gpu_point* parse_gpu_point_array(char *value, size_t value_len){
@@ -96,6 +105,7 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
     parse_toml_str(system_name, system_config);
     parse_toml_str(app_directory, system_config);
     parse_toml(use_net, system_config, parse_int_u64);
+    parse_toml(preferred_screen_size, system_config, parse_gpu_size);
     
     parse_toml(logo_points_count,   boot_theme,parse_int_u64);
     parse_toml(logo_repeat,         boot_theme,parse_int_u64);

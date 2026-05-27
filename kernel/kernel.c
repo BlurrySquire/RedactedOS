@@ -65,7 +65,12 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
 
     enable_interrupt();
 
-    load_module(&graphics_module);
+    load_module(&disk_module);
+
+    init_filesystem();
+    load_module(&theme_mod);
+
+    load_module(&graphics_module);//TODO: should be possible to not load this, or it fails. 
     
     bool can_init_usb = true;
     
@@ -76,11 +81,6 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
            pci_setup_rp1();
     }
 #endif
-
-    load_module(&disk_module);
-
-    init_filesystem();
-    load_module(&theme_mod);
 
     bool usb_available = can_init_usb ? load_module(&usb_module) : false;
     bool network_available = false;
