@@ -26,17 +26,17 @@ hash_map_t *open_files;
 void* page;
 
 void* open_files_alloc(size_t size){
-    return kalloc(page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+    return allocate(page, size, page_alloc);
 }
 
 extern bool load_home();
 extern bool load_boot_partition();
 
 bool init_filesystem(){
-    page = palloc(PAGE_SIZE*8, MEM_PRIV_KERNEL, MEM_RW, false);
+    page = page_alloc(PAGE_SIZE);
     open_files = hash_map_create(1024);
     open_files->alloc = open_files_alloc;
-    open_files->free = kfree;
+    open_files->free = release;
     const char *path = "disk";
     system_module *disk_mod = get_module(&path);
     if (disk_mod){
@@ -64,7 +64,7 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
     system_module *mod = 0;
     FS_RESULT result = open_file_global(root, path, descriptor, &mod);
     if (result != FS_RESULT_SUCCESS) return result;
-    open_file_descriptors *of = (open_file_descriptors*)kalloc(page, sizeof(open_file_descriptors), ALIGN_16B, MEM_PRIV_KERNEL);
+    open_file_descriptors *of = (open_file_descriptors*)open_files_alloc(sizeof(open_file_descriptors));
     if (!of) {
         close_file_global(descriptor, mod);
         return FS_RESULT_DRIVER_ERROR;
@@ -86,7 +86,7 @@ FS_RESULT open_file(module_root *root, const char* path, file* descriptor){
             .cursor = 0,
         };
         close_file_global(&tmp, mod);
-        kfree(of, sizeof(open_file_descriptors));
+        release(of);
         return FS_RESULT_DRIVER_ERROR;
     }
     return FS_RESULT_SUCCESS;
@@ -130,7 +130,7 @@ void close_file(file *descriptor){
         .data_type = descriptor->data_type
     };
     close_file_global(&gfd, ofile->mod);
-    kfree(ofile, sizeof(open_file_descriptors));
+    release(ofile);
 }
 
 void close_file_global(file *descriptor, system_module *mod){

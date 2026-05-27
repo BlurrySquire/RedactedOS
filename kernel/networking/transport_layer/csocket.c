@@ -4,6 +4,7 @@
 #include "memory/page_allocator.h"
 #include "console/kio.h"
 #include "data/struct/hashmap.h"
+#include "alloc/allocate.h"
 
 uint16_t socket_ids;
 
@@ -19,16 +20,15 @@ typedef struct ksock_handle_t {
     uint16_t pid;
 } ksock_handle_t;
 
-void* custom_alloc(size_t size){
-    return kalloc(sock_mem_page, size, ALIGN_64B, MEM_PRIV_KERNEL);
+void* csock_alloc(size_t size){
+    return allocate(sock_mem_page, size, page_alloc);
 }
 
 static inline void check_mem(){
     if (!sock_mem_page)
-        sock_mem_page = palloc(PAGE_SIZE, MEM_PRIV_KERNEL, MEM_RW, false);
-    if (!map){
-        map = hash_map_create_alloc(128, custom_alloc, kfree);
-    }
+        sock_mem_page = page_alloc(MEM_PRIV_KERNEL);
+    if (!map)
+        map = hash_map_create_alloc(128, csock_alloc, release);
 }
 
 bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptions* extra, uint16_t pid, SocketHandle *out_handle){
@@ -52,7 +52,7 @@ bool create_socket(Socket_Role role, protocol_t protocol, const SocketExtraOptio
     out_handle->protocol = protocol;
 
     kprintf("Allocating");
-    ksock_handle_t *sh = (ksock_handle_t*)custom_alloc(sizeof(ksock_handle_t));
+    ksock_handle_t *sh = (ksock_handle_t*)csock_alloc(sizeof(ksock_handle_t));
     sh->sh = in_handle;
     sh->id = out_handle->id;
     sh->protocol = protocol;
@@ -73,7 +73,7 @@ int32_t bind_socket(SocketHandle *handle, uint16_t port, ip_version_t ip_version
         return 0;
     }
     protocol_t protocol = sh->protocol;
-    SockBindSpec *spec = kalloc(sock_mem_page, sizeof(SockBindSpec), ALIGN_64B, MEM_PRIV_KERNEL);
+    SockBindSpec *spec = csock_alloc(sizeof(SockBindSpec));
     spec->kind = BIND_IP;
     spec->ver = ip_version;
     memset(spec->ip, 0, sizeof(spec->ip));
