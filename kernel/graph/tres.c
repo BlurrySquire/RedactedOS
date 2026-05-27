@@ -108,9 +108,19 @@ void check_collisions(window_frame *frame){
 }
 
 bool create_window(i32 x, i32 y, u32 width, u32 height){
-    if (win_ids == UINT16_MAX) return false;
-    if (zoom_scale != 1) return false;
-    if (width < 0x100 || height < 0x100) return false;
+    irq_flags_t irq = irq_save_disable();
+    if (win_ids == UINT16_MAX){ 
+        irq_restore(irq);
+        return false; 
+    }
+    if (zoom_scale != 1){ 
+        irq_restore(irq);
+        return false; 
+    }
+    if (width < 0x100 || height < 0x100){ 
+        irq_restore(irq);
+        return false; 
+    }
     
     window_frame *frame = (window_frame*)zalloc(sizeof(window_frame));
     frame->win_id = win_ids++;
@@ -131,7 +141,6 @@ bool create_window(i32 x, i32 y, u32 width, u32 height){
     linked_list_push_front(window_list, PHYS_TO_VIRT_P(frame));
     gpu_create_window(x,y, width, height, &frame->win_ctx);
 
-    irq_flags_t irq = irq_save_disable();
     process_t *p = execute("/boot/redos/system/launcher.red", 0, 0, 0);
     if (!p){
         irq_restore(irq);
