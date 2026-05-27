@@ -77,7 +77,7 @@ gpu_point* parse_gpu_point_array(char *value, size_t value_len){
         }
     }
     boot_theme.logo_points_count = count;
-    gpu_point *points = malloc(count * sizeof(gpu_point));
+    gpu_point *points = zalloc(count * sizeof(gpu_point));
     for (int i = 0; i < count; i++){
         char *start_index = 0;
         do {
