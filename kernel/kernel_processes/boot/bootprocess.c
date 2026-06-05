@@ -51,6 +51,10 @@ void bootsm_advance(){
                 bootsm_transition(bsm_login);
                 break;
             }
+            if (!system_config.headless){
+                bootsm_transition(bsm_screensaver);
+                break;
+            }
             bootsm_transition(bsm_userland); break;
         case bsm_screensaver: bootsm_transition(bsm_userland); break;
         case bsm_login: bootsm_transition(system_config.headless ? bsm_userland : bsm_screensaver); break;
