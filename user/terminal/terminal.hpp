@@ -16,6 +16,7 @@ public:
     void bell();
     bool interpret_cmd_code(char code, u16 proc);
     void ctrl(console_ctrls ctrl);
+    bool headless;
 protected:
     bool handle_input();
     void repeat_tick();

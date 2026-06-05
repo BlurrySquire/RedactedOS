@@ -42,7 +42,8 @@ bool init_filesystem(){
     if (disk_mod){
         if (!load_boot_partition()) return false;
     }
-    return load_home();
+    load_home();
+    return true;
 }
 
 FS_RESULT open_file_global(module_root *root, const char* path, file* descriptor, system_module **mod){

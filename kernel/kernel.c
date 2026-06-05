@@ -14,7 +14,6 @@
 #include "networking/processes/net_proc.h"
 #include "memory/page_allocator.h"
 #include "networking/network.h"
-#include "random/random.h"
 #include "filesystem/filesystem.h"
 #include "filesystem/modules/module_loader.h" 
 #include "audio/audio.h"
@@ -57,8 +56,6 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     load_module(&console_module);
 
     print_hardware();
-
-    load_module(&rng_module);
     
     irq_init();
     kprintf("Interrupts initialized");
@@ -70,7 +67,8 @@ void kernel_main(uint64_t board_type, uint64_t dtb_pa) {
     init_filesystem();
     load_module(&theme_mod);
 
-    load_module(&graphics_module);//TODO: should be possible to not load this, or it fails. 
+    // if (!system_config.headless)
+        load_module(&graphics_module);
     
     bool can_init_usb = true;
     

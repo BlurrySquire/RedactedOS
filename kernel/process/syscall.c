@@ -33,6 +33,7 @@
 #include "process/uaccess.h"
 #include "filesystem/modules/fs_isolation.h"
 #include "files/dir_list.h"
+#include "theme/theme.h"
 
 int syscall_depth = 0;
 uintptr_t cpec;

@@ -400,13 +400,15 @@ draw_ctx* Terminal::get_ctx(){
 }
 
 void Terminal::flush(draw_ctx *ctx){
+    if (headless) return;
     commit_draw_ctx(ctx);
 }
 
 void Terminal::refresh(){
+    if (headless) return;
     flush(dctx);
 }
 
 bool Terminal::screen_ready(){
-    return true;
+    return !headless;
 }

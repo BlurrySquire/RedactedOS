@@ -39,7 +39,10 @@ system_config_t system_config = {
     .system_name = SYSTEM_NAME,
     .app_directory = "boot",
     .use_net = false,
-    .preferred_screen_size = {1920,1080}
+    .preferred_screen_size = {1920,1080},
+    .headless = false,
+    .use_login = false,
+    .use_windows = true,
 };
 
 gpu_point parse_gpu_point(char *value, size_t value_len){
@@ -99,7 +102,7 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
     parse_toml(err_color,               system_theme, parse_hex_u64);
     parse_toml(cursor_color_deselected, system_theme, parse_hex_u64);
     parse_toml(cursor_color_selected,   system_theme, parse_hex_u64);
-    parse_toml(use_window_shadows,      system_theme,parse_int_u64);
+    parse_toml(use_window_shadows,      system_theme, parse_int_u64);
     
     parse_toml_str(panic_text,  system_config);
     parse_toml_str(system_name, system_config);
@@ -122,6 +125,10 @@ void parse_theme_kvp(string_slice key, string_slice value, void *context){
     parse_toml(logo_steps, boot_theme, parse_int_u64);
 
     parse_toml(logo_points, boot_theme, parse_gpu_point_array);
+
+    parse_toml(headless, system_config, parse_int_u64);
+    parse_toml(use_login, system_config, parse_int_u64);
+    parse_toml(use_windows, system_config, parse_int_u64);
 
 }
 
