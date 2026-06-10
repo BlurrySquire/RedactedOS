@@ -29,14 +29,14 @@ gpu_rect screen_rect = {};
 
 shell_handle* main_shell;
 
-range rerender_range = { };
+range_t rerender_range = { };
 
 void flush(shell_handle *handle);
 
 void append(char *fmt, ...){
     __attribute__((aligned(16))) va_list args;
     va_start(args, fmt); 
-    rerender_range = (range){ contents.cursor, 0 };
+    rerender_range = (range_t){ contents.cursor, 0 };
     size_t size = buffer_write_va(&contents, fmt, args);
     va_end(args);
     rerender_range.size = size;
@@ -79,7 +79,7 @@ void flush(shell_handle *handle){
     fb_continuous_draw_text(&ctx, operation, &cursor, slice_from_buffer(&contents), &rerender_range, screen_rect, &out_size, scroll, current_formatting, (text_format_arr){});
     ctx.full_redraw = true;
     commit_draw_ctx(&ctx);
-    rerender_range = (range){ .start = contents.cursor };
+    rerender_range = (range_t){ .start = contents.cursor };
     operation = draw_text_render;
 }
 
@@ -158,7 +158,7 @@ void render_cursor(bool show){
         fb_fill_rect(&ctx, cursor.x, cursor.y, char_width, line_height, current_formatting.foreground);
     } else {
         fb_fill_rect(&ctx, cursor.x, cursor.y, char_width, line_height, current_formatting.background);
-        rerender_range = (range){contents.cursor,1};
+        rerender_range = (range_t){contents.cursor,1};
     }
     flush(current_shell);
 }
@@ -173,7 +173,7 @@ bool move_buf_cursor(i64 amount){
     pos_to_lin_col(buffer_seek(&contents, amount, false), slice_from_buffer(&contents), &cursor.y, &cursor.x);
     cursor.x *= char_width;
     cursor.y *= line_height;
-    rerender_range = (range){contents.cursor,1};
+    rerender_range = (range_t){contents.cursor,1};
     render_cursor(cursor_on);
     return true;
 }
