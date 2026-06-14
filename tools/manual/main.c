@@ -25,6 +25,10 @@ void markdown_sections(string_slice document, void (*on_section)(int size, strin
 
 char *seek_section = 0;
 
+void analyze_tags(string_slice title, string_slice content){
+    //TODO: regular expressions
+}
+
 void print_section(int size, string_slice title, string_slice content){
     if (!seek_section) return;
 
@@ -34,6 +38,9 @@ void print_section(int size, string_slice title, string_slice content){
     
     if (slice_lit_match(title, seek_section, true)){
         print("%v",content);
+    } else {
+        analyze_tags(title, content);
+        //TODO: Analyze the content, looking for ![<PRINT>](seek_section/other_section)
     }
 }
 
