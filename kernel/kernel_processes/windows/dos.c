@@ -13,6 +13,7 @@
 #include "input_keycodes.h"
 #include "wincomp.h"
 #include "ui/color/color.h"
+#include "utils/cursor/cursor_manager.h"
 
 #define BORDER_SIZE 3
 
@@ -205,7 +206,14 @@ void check_shortcuts(){
             switch_focus(i < 2 ? sign : 0, i >= 2 ? sign : 0);   
         }
     for (int i = 0; i < mode_count; i++)
-        if (sys_shortcut_triggered_current(mode_shortcuts[i])) mode = i;
+        if (sys_shortcut_triggered_current(mode_shortcuts[i])){
+            mode = i;
+            switch (mode) {
+            case window_mode: switch_cursor(cursor_crosshair); break;
+            case doodle_mode: switch_cursor(cursor_pencil); break;
+            default: break;
+            }
+        }
 }
 
 int window_system(){
@@ -214,6 +222,7 @@ int window_system(){
     setup_desktop_bg();
     draw_desktop();
     setup_shortcuts();
+    switch_cursor(cursor_crosshair);
     
     gpu_point start_point = {0,0};
     bool drawing = false;
