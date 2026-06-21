@@ -5,6 +5,12 @@
 #include "environment/env_types.h"
 #include "data/serialize/binary_serial.h"
 #include "kbd_helper.h"
+#include "memory/memory.h"
+
+text_format input_format = {};
+
+#define INPUT_MARGIN 10
+#define INPUT_HEIGHT (fb_line_height(input_format.scale)+(INPUT_MARGIN*2))
 
 gpu_point scroll = {};
 
@@ -83,6 +89,16 @@ void flush(shell_handle *handle){
     operation = draw_text_render;
 }
 
+void refresh_input(){
+    fb_fill_rect(&ctx, 0, ctx.height-INPUT_HEIGHT, ctx.width, INPUT_HEIGHT, input_format.background);
+    gpu_size offset = fb_draw_slice(&ctx, SLICE("> "), 0, ctx.height-INPUT_HEIGHT+INPUT_MARGIN, input_format.scale, input_format.foreground);
+    fb_draw_slice(&ctx, slice_from_buffer(&input_buf), offset.width, ctx.height-INPUT_HEIGHT+INPUT_MARGIN, input_format.scale, input_format.foreground);
+    u32 char_width = fb_char_width(input_format.scale);
+    if (cursor_on)
+        fb_fill_rect(&ctx, offset.width + (char_width * input_buf.cursor), ctx.height-INPUT_HEIGHT+INPUT_MARGIN, char_width, INPUT_HEIGHT-(INPUT_MARGIN*2), input_format.foreground);
+    commit_draw_ctx(&ctx);
+}
+
 void bell(shell_handle *handle){
     if (main_shell && main_shell != handle) return;
     print("DING");
@@ -118,22 +134,11 @@ shell_handle* create_shell(){
     return handle;
 }
 
-void render_cursor(bool show);
-
 bool erase(bool forward){
+    if (forward && input_buf.cursor >= input_buf.buffer_size) return false;
     if (!buffer_delete(&input_buf, input_buf.cursor + forward, 1)) return false;
-    uptr cursor = contents.cursor + forward;
-    size_t size = buffer_delete(&contents, cursor, 1);
-    if (size){
-        //TODO: rendering bug when DEL
-        render_cursor(false);
-        rerender_range.start = cursor;
-        rerender_range.size = size;
-        operation = draw_text_delete;
-        flush(current_shell);
-        render_cursor(cursor_on);
-    }
-    
+
+    refresh_input();
     return true;
 }
 
@@ -145,36 +150,15 @@ bool run_command(){
     
     if (run_cmd(main_shell, slice_from_buffer(&input_buf))) success = true;
 
-    append("> ");
     buffer_wipe(&input_buf);
     return success;
-}
-
-void render_cursor(bool show){
-    u32 char_width = fb_char_width(current_formatting.scale);
-    u32 line_height = fb_char_width(current_formatting.scale);
-    operation = draw_text_rerender;
-    if (show){
-        fb_fill_rect(&ctx, cursor.x, cursor.y, char_width, line_height, current_formatting.foreground);
-    } else {
-        fb_fill_rect(&ctx, cursor.x, cursor.y, char_width, line_height, current_formatting.background);
-        rerender_range = (range_t){contents.cursor,1};
-    }
-    flush(current_shell);
 }
 
 bool move_buf_cursor(i64 amount){
     if (!amount) return false;
     uptr old_in_c = input_buf.cursor;
     if (buffer_seek(&input_buf, amount, false) == old_in_c) return false;
-    render_cursor(false);
-    u32 char_width = fb_char_width(current_formatting.scale);
-    u32 line_height = fb_line_height(current_formatting.scale);
-    pos_to_lin_col(buffer_seek(&contents, amount, false), slice_from_buffer(&contents), &cursor.y, &cursor.x);
-    cursor.x *= char_width;
-    cursor.y *= line_height;
-    rerender_range = (range_t){contents.cursor,1};
-    render_cursor(cursor_on);
+    refresh_input();
     return true;
 }
 
@@ -201,8 +185,7 @@ bool handle_input(){
     if (!input_buf.buffer) input_buf = buffer_create(0x100, buffer_can_grow);
 
     buffer_write_lim(&input_buf, &readable, 1);
-
-    put_char(main_shell, readable);
+    refresh_input();
 
     flush(main_shell);
     
@@ -212,15 +195,17 @@ bool handle_input(){
 
 void toggle_cursor(){
     cursor_on = !cursor_on;
-    render_cursor(cursor_on);
+    refresh_input();
 }
 
 int main(){    
     request_app_ctx(&ctx);
-    screen_rect = (gpu_rect){ .point = {}, .size = {ctx.width,ctx.height}};
+
+    current_formatting.scale = 3;
+
+    screen_rect = (gpu_rect){ .point = {}, .size = { ctx.width, ctx.height-INPUT_HEIGHT }};
 
     current_formatting.wrap = wrap_word;
-    current_formatting.scale = 3;
 
     contents = buffer_create(0x100, buffer_can_grow);
 
@@ -231,18 +216,19 @@ int main(){
     current_formatting.background = color_buf[0];
     current_formatting.foreground = color_buf[1];
 
+    memcpy(&input_format, &current_formatting, sizeof(text_format));
+
     fb_clear(&ctx, current_formatting.background);
     // int i = 0;
 
     main_shell = create_shell();
-
-    append("> ");
 
     current_shell = main_shell;
 
     u64 cursor_current = 0;
 
     u64 last_time = get_time();
+    refresh_input();
     while (true){
         // append("Bonjour %.3i \t",i++);
         u64 current_time = get_time();
