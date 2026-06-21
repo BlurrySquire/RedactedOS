@@ -46,7 +46,20 @@ shell_handle* main_shell;
 
 range_t rerender_range = { };
 
-void flush(shell_handle *handle);
+void flush(shell_handle *handle, bool can_scroll);
+
+static char log_buf[1024];
+
+int debug_print(const char *fmt, ...){
+    __attribute__((aligned(16))) va_list args;
+    va_start(args, fmt); 
+    memset(log_buf, 0, 1024);
+    size_t n = string_format_va_buf(fmt, log_buf, sizeof(log_buf), args);
+    va_end(args);
+    if (n >= sizeof(log_buf)) log_buf[sizeof(log_buf)-1] = '\0';
+    printl(log_buf);
+    return 0;
+}
 
 void append(char *fmt, ...){
     __attribute__((aligned(16))) va_list args;
@@ -55,17 +68,7 @@ void append(char *fmt, ...){
     size_t size = buffer_write_va(&contents, fmt, args);
     va_end(args);
     rerender_range.size = size;
-    // scroll.y = 100;
-    // if (scroll.y) {
-    //     print("Scrolled %i",scroll.y);
-    //     out_size = fb_draw_text(&ctx, slice_from_buffer(&contents), screen_rect, scroll, current_formatting, (text_format_arr){});
-    //     // if ((i32)out_size.height - (i32)ctx.height >= 0) scroll.y += (i32)out_size.height - ctx.height;
-    //     return;
-    // }
-    // print("Range is {%i,%i}",rerender_range.start,rerender_range.size);
-    
-    // if ((i32)out_size.height - (i32)ctx.height >= 0) scroll.y = -((i32)out_size.height - ctx.height);
-    flush(main_shell);
+    flush(main_shell, true);
 }
 
 shell_handle* make_default_shell(shell_bindings bindings){
@@ -74,11 +77,26 @@ shell_handle* make_default_shell(shell_bindings bindings){
 
 void clear(shell_handle *handle){
     if (main_shell && main_shell != handle) return;
-    buffer_wipe(&contents);
+    // buffer_wipe(&contents);
     fb_clear(&ctx, current_formatting.current_bg_color);
 }
 
 bool return_from_parse = false;
+
+
+void scroll_out(int amount, bool can_rescroll){
+    scroll.y += amount * line_height;
+    if (scroll.y > 0) {
+        scroll.y = 0;
+        return;
+    }
+    current_formatting.cursor_x = 0;
+    current_formatting.cursor_y = 0;
+    clear(current_shell);
+    rerender_range.start = 0;
+    rerender_range.size = contents.buffer_size;
+    flush(current_shell, can_rescroll);
+}
 
 void put_char(shell_handle *handle, char c){
     // print("New char %c %x %x %i",c,handle,main_shell,contents.cursor);
@@ -99,7 +117,7 @@ void put_char(shell_handle *handle, char c){
         serial_transmit(c);
     else {
         rerender_range.size += buffer_write_lim(&contents, &c, 1);
-        if (return_from_parse) flush(handle);
+        if (return_from_parse) flush(handle, true);
         return_from_parse = false;
     }
 }
@@ -108,17 +126,29 @@ text_format embedded_fmt_to_text(embedded_fmt fmt){
     return (text_format){.background = fmt.current_bg_color, .foreground = fmt.current_text_color, .scale = TEXT_SCALE, .wrap = wrap_word};
 }
 
-void flush(shell_handle *handle){
+void flush(shell_handle *handle, bool can_scroll){
     // print("Flush %v {%i,%i}",slice_from_buffer(&contents),rerender_range.start,rerender_range.size);
     if (main_shell && main_shell != handle) return;
 
+    gpu_rect rect = (gpu_rect){ 
+        { 
+            scroll.x,
+            scroll.y,
+        }, { 
+            ctx.width,
+            ctx.height-INPUT_HEIGHT
+        }
+    };
+    
     gpu_point cursor = {.x = current_formatting.cursor_x*char_width,.y = current_formatting.cursor_y*line_height};
-    fb_continuous_draw_text(&ctx, operation, &cursor, slice_from_buffer(&contents), &rerender_range, screen_rect, &out_size, scroll, embedded_fmt_to_text(current_formatting), (text_format_arr){});
+    fb_continuous_draw_text(&ctx, operation, &cursor, slice_from_buffer(&contents), &rerender_range, rect, &out_size, scroll, embedded_fmt_to_text(current_formatting), (text_format_arr){});
+
+    if (cursor.y + scroll.y > (i32)rect.size.height && can_scroll)
+        scroll_out(-line_height, true);
+    
     current_formatting.cursor_x = cursor.x/char_width;
     current_formatting.cursor_y = cursor.y/line_height;
     
-    ctx.full_redraw = true;
-    commit_draw_ctx(&ctx);
     rerender_range = (range_t){ .start = contents.cursor };
     operation = draw_text_render;
 }
@@ -178,9 +208,13 @@ void emit_data(structdef field, sizedptr data, bool is_allocated){
     // if (is_allocated) release((void*)data.ptr);
 }
 
+void flush_proxy(shell_handle *handle){
+    flush(handle, true);
+}
+
 shell_bindings terminal_bindings = (shell_bindings){
     .console_output = put_char,
-    .console_flush = flush,
+    .console_flush = flush_proxy,
     .console_clean = clear,
     .console_bell = bell,
     .console_ascii_cmd = ascii_cmd,
@@ -248,7 +282,18 @@ bool scroll_history(i64 amount){
     return false;
 }
 
+void handle_mouse(){
+    mouse_data data = {};
+    get_mouse_status(&data);
+    if (data.raw.scroll){
+        scroll_out(data.raw.scroll, false);
+    }
+}
+
 bool handle_input(){
+    
+    handle_mouse();
+    
     kbd_event event;
     if (!read_event(&event)) return false;
     if (event.type == KEY_RELEASE) return true;
@@ -267,6 +312,9 @@ bool handle_input(){
     
     if (key == KEY_LEFT) return move_buf_cursor(-1);
     if (key == KEY_RIGHT) return move_buf_cursor(1);
+
+    if (key == KEY_PAGEDOWN || key == KEY_PAGEUP)
+        scroll_out(key == KEY_PAGEDOWN ? -1 : 1, false);
     
     if (!readable) return false;
     
@@ -275,7 +323,7 @@ bool handle_input(){
     buffer_write_lim(&input_buf, &readable, 1);
     refresh_input();
 
-    flush(main_shell);
+    flush(main_shell, true);
     
     return true;
     
@@ -288,8 +336,6 @@ void toggle_cursor(){
 
 int main(){    
     request_app_ctx(&ctx);
-
-    screen_rect = (gpu_rect){ .point = {}, .size = { ctx.width, ctx.height-INPUT_HEIGHT }};
 
     contents = buffer_create(0x100, buffer_can_grow);
 
@@ -329,7 +375,9 @@ int main(){
         }
         last_time = current_time;
         handle_input();
-        // msleep(1);
+        msleep(1);
+        ctx.full_redraw = true;
+        commit_draw_ctx(&ctx);
     }
     
     return 0;
