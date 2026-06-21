@@ -6,11 +6,17 @@
 #include "data/serialize/binary_serial.h"
 #include "kbd_helper.h"
 #include "memory/memory.h"
+#include "utils/embedded_fmt/tcf.h"
 
-text_format input_format = {};
+embedded_fmt input_format = {};
+
+#define TEXT_SCALE 3
+u32 char_width;
+u32 line_height;
+u32 char_height;
 
 #define INPUT_MARGIN 10
-#define INPUT_HEIGHT (fb_line_height(input_format.scale)+(INPUT_MARGIN*2))
+#define INPUT_HEIGHT (line_height+(INPUT_MARGIN*2))
 
 gpu_point scroll = {};
 
@@ -20,7 +26,7 @@ draw_text_op operation = draw_text_render;
 bool cursor_on = false;
 u64 cursor_blink_time = 500;
 
-text_format current_formatting = {};
+embedded_fmt current_formatting = {};
 u32 bg_color;
 
 buffer contents = {};
@@ -28,7 +34,6 @@ buffer input_buf = {};
 
 draw_ctx ctx = {};
 
-gpu_point cursor = {};
 gpu_size out_size = {};
 
 gpu_rect screen_rect = {};
@@ -63,26 +68,51 @@ shell_handle* make_default_shell(shell_bindings bindings){
     return create_sheldon(bindings, 0);
 }
 
+void clear(shell_handle *handle){
+    if (main_shell && main_shell != handle) return;
+    buffer_wipe(&contents);
+    fb_clear(&ctx, current_formatting.current_bg_color);
+}
+
+bool return_from_parse = false;
+
 void put_char(shell_handle *handle, char c){
     // print("New char %c %x %x %i",c,handle,main_shell,contents.cursor);
     if (!c || (main_shell && main_shell != handle)) return;
+    bool render = true;
+    if (embedded_fmt_parse(&current_formatting, c)){
+        render = false;
+        return_from_parse = true;
+        if (current_formatting.wipe){
+            current_formatting.wipe = false;
+            clear(handle);
+            return;
+        }
+    }
+    if (!render)
+        return;
     if (headless)
         serial_transmit(c);
     else {
         rerender_range.size += buffer_write_lim(&contents, &c, 1);
+        if (return_from_parse) flush(handle);
+        return_from_parse = false;
     }
 }
 
-void clear(shell_handle *handle){
-    if (main_shell && main_shell != handle) return;
-    buffer_wipe(&contents);
-    fb_clear(&ctx, current_formatting.background);
+text_format embedded_fmt_to_text(embedded_fmt fmt){
+    return (text_format){.background = fmt.current_bg_color, .foreground = fmt.current_text_color, .scale = TEXT_SCALE, .wrap = wrap_word};
 }
 
 void flush(shell_handle *handle){
     // print("Flush %v {%i,%i}",slice_from_buffer(&contents),rerender_range.start,rerender_range.size);
     if (main_shell && main_shell != handle) return;
-    fb_continuous_draw_text(&ctx, operation, &cursor, slice_from_buffer(&contents), &rerender_range, screen_rect, &out_size, scroll, current_formatting, (text_format_arr){});
+
+    gpu_point cursor = {.x = current_formatting.cursor_x*char_width,.y = current_formatting.cursor_y*line_height};
+    fb_continuous_draw_text(&ctx, operation, &cursor, slice_from_buffer(&contents), &rerender_range, screen_rect, &out_size, scroll, embedded_fmt_to_text(current_formatting), (text_format_arr){});
+    current_formatting.cursor_x = cursor.x/char_width;
+    current_formatting.cursor_y = cursor.y/line_height;
+    
     ctx.full_redraw = true;
     commit_draw_ctx(&ctx);
     rerender_range = (range_t){ .start = contents.cursor };
@@ -90,12 +120,11 @@ void flush(shell_handle *handle){
 }
 
 void refresh_input(){
-    fb_fill_rect(&ctx, 0, ctx.height-INPUT_HEIGHT, ctx.width, INPUT_HEIGHT, input_format.background);
-    gpu_size offset = fb_draw_slice(&ctx, SLICE("> "), 0, ctx.height-INPUT_HEIGHT+INPUT_MARGIN, input_format.scale, input_format.foreground);
-    fb_draw_slice(&ctx, slice_from_buffer(&input_buf), offset.width, ctx.height-INPUT_HEIGHT+INPUT_MARGIN, input_format.scale, input_format.foreground);
-    u32 char_width = fb_char_width(input_format.scale);
+    fb_fill_rect(&ctx, 0, ctx.height-INPUT_HEIGHT, ctx.width, INPUT_HEIGHT, input_format.current_bg_color);
+    gpu_size offset = fb_draw_slice(&ctx, SLICE("> "), 0, ctx.height-INPUT_HEIGHT+INPUT_MARGIN, TEXT_SCALE, input_format.current_text_color);
+    fb_draw_slice(&ctx, slice_from_buffer(&input_buf), offset.width, ctx.height-INPUT_HEIGHT+INPUT_MARGIN, TEXT_SCALE, input_format.current_text_color);
     if (cursor_on)
-        fb_fill_rect(&ctx, offset.width + (char_width * input_buf.cursor), ctx.height-INPUT_HEIGHT+INPUT_MARGIN, char_width, INPUT_HEIGHT-(INPUT_MARGIN*2), input_format.foreground);
+        fb_fill_rect(&ctx, offset.width + (char_width * input_buf.cursor), ctx.height-INPUT_HEIGHT+INPUT_MARGIN, char_width, INPUT_HEIGHT-(INPUT_MARGIN*2), input_format.current_text_color);
     commit_draw_ctx(&ctx);
 }
 
@@ -106,17 +135,42 @@ void bell(shell_handle *handle){
 
 void ascii_cmd(shell_handle *handle, char cmd, u16 proc_id){
     if (main_shell && main_shell != handle) return;
-    print("[TERM implementation error] ascii commands not supported");
+    switch (cmd){
+        case ASCII_CMD_ETX:
+            send_signal(SIG_QUIT, proc_id);
+        break;
+        case ASCII_CMD_SUB:
+            send_signal(SIG_STOP, proc_id);
+        break;
+        case ASCII_CMD_CAN:
+            send_signal(SIG_CONT, proc_id);
+        break;
+        default: break;
+    }
 }
 
 void console_ctrl(shell_handle *handle, console_ctrls ctrl){
     if (main_shell && main_shell != handle) return;
-    print("[TERM implementation error] console control not supported");
+    switch (ctrl) {
+        case console_ctrl_close: halt(0);
+        default: break;
+    }
 }
 
 void emit_data(structdef field, sizedptr data, bool is_allocated){
     // if (main_shell && main_shell != handle) return;
-    print("[TERM implementation error] structured data not supported");
+    if (!data.ptr || !data.size) return;
+        switch (field.type) {
+        case binary_type_i8: print("%S: %i",field.name,*(i8*)data.ptr); break;
+        case binary_type_i16: print("%S: %i",field.name,*(i16*)data.ptr); break;
+        case binary_type_i32: print("%S: %i",field.name,*(i32*)data.ptr); break;  
+        case binary_type_i64: print("%S: %i",field.name,*(i64*)data.ptr); break;
+        case binary_type_float: print("%S: %f",field.name,*(float*)data.ptr); break;
+        case binary_type_double: print("%S: %f",field.name,*(double*)data.ptr); break;
+        case binary_type_string: print("%S: %v",field.name,data); break;
+        default: return;
+    }
+    if (is_allocated) release((void*)data.ptr);
 }
 
 shell_bindings terminal_bindings = (shell_bindings){
@@ -201,24 +255,26 @@ void toggle_cursor(){
 int main(){    
     request_app_ctx(&ctx);
 
-    current_formatting.scale = 3;
-
     screen_rect = (gpu_rect){ .point = {}, .size = { ctx.width, ctx.height-INPUT_HEIGHT }};
 
-    current_formatting.wrap = wrap_word;
-
     contents = buffer_create(0x100, buffer_can_grow);
+
+    char_width = fb_char_width(TEXT_SCALE);
+    char_height = fb_char_width(TEXT_SCALE);
+    line_height = fb_line_height(TEXT_SCALE);
 
     u32 color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
     if ((color_buf[0] & 0xFF000000) == 0) color_buf[0] |= 0xFF000000;
     if ((color_buf[1] & 0xFF000000) == 0) color_buf[1] |= 0xFF000000;
-    current_formatting.background = color_buf[0];
-    current_formatting.foreground = color_buf[1];
+    current_formatting.default_bg_color = current_formatting.current_bg_color = color_buf[0];
+    current_formatting.default_text_color = current_formatting.current_text_color = color_buf[1];
+
+    init_tcf(&current_formatting);
 
     memcpy(&input_format, &current_formatting, sizeof(text_format));
 
-    fb_clear(&ctx, current_formatting.background);
+    fb_clear(&ctx, current_formatting.current_bg_color);
     // int i = 0;
 
     main_shell = create_shell();
