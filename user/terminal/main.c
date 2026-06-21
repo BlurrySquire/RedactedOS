@@ -7,6 +7,7 @@
 #include "kbd_helper.h"
 #include "memory/memory.h"
 #include "utils/embedded_fmt/tcf.h"
+#include "files/helpers.h"
 
 embedded_fmt input_format = {};
 
@@ -19,6 +20,9 @@ u32 char_height;
 #define INPUT_HEIGHT (line_height+(INPUT_MARGIN*2))
 
 gpu_point scroll = {};
+
+int history_ptr = 0;
+int history_count = 0;
 
 bool headless = false;
 draw_text_op operation = draw_text_render;
@@ -159,18 +163,19 @@ void console_ctrl(shell_handle *handle, console_ctrls ctrl){
 
 void emit_data(structdef field, sizedptr data, bool is_allocated){
     // if (main_shell && main_shell != handle) return;
-    if (!data.ptr || !data.size) return;
-        switch (field.type) {
-        case binary_type_i8: print("%S: %i",field.name,*(i8*)data.ptr); break;
-        case binary_type_i16: print("%S: %i",field.name,*(i16*)data.ptr); break;
-        case binary_type_i32: print("%S: %i",field.name,*(i32*)data.ptr); break;  
-        case binary_type_i64: print("%S: %i",field.name,*(i64*)data.ptr); break;
-        case binary_type_float: print("%S: %f",field.name,*(float*)data.ptr); break;
-        case binary_type_double: print("%S: %f",field.name,*(double*)data.ptr); break;
-        case binary_type_string: print("%S: %v",field.name,data); break;
-        default: return;
-    }
-    if (is_allocated) release((void*)data.ptr);
+    print("[TERMINAL implementation error] structured data displaying not implemented");
+    // if (!data.ptr || !data.size) return;
+    //     switch (field.type) {
+    //     case binary_type_i8: print("%S: %i",field.name,*(i8*)data.ptr); break;
+    //     case binary_type_i16: print("%S: %i",field.name,*(i16*)data.ptr); break;
+    //     case binary_type_i32: print("%S: %i",field.name,*(i32*)data.ptr); break;  
+    //     case binary_type_i64: print("%S: %i",field.name,*(i64*)data.ptr); break;
+    //     case binary_type_float: print("%S: %f",field.name,*(float*)data.ptr); break;
+    //     case binary_type_double: print("%S: %f",field.name,*(double*)data.ptr); break;
+    //     case binary_type_string: print("%S: %v",field.name,data); break;
+    //     default: return;
+    // }
+    // if (is_allocated) release((void*)data.ptr);
 }
 
 shell_bindings terminal_bindings = (shell_bindings){
@@ -201,6 +206,10 @@ bool run_command(){
     bool success = false;
 
     append("\r\n");
+
+    write_full_file("/termhistory", input_buf.buffer, input_buf.buffer_size);
+    history_count++;
+    history_ptr = history_count;
     
     if (run_cmd(main_shell, slice_from_buffer(&input_buf))) success = true;
 
@@ -216,6 +225,29 @@ bool move_buf_cursor(i64 amount){
     return true;
 }
 
+bool scroll_history(i64 amount){
+    int new_history_ptr = history_ptr + amount;
+    if (new_history_ptr < 0) new_history_ptr = 0;
+    string file = string_format("/termhistory/%i",new_history_ptr);
+    fs_stat st = {};
+    if (statf(file.data, &st)){
+        size_t hist_size = 0;
+        char *history = read_full_file(file.data, &hist_size);
+        if (input_buf.buffer) buffer_destroy(&input_buf);
+        input_buf = (buffer){
+            .buffer = history,
+            .buffer_size = hist_size,
+            .limit = hist_size,
+            .options = buffer_can_grow,
+            .cursor = hist_size
+        };
+        history_ptr = new_history_ptr;
+        return true;
+    }
+    buffer_wipe(&input_buf);
+    return false;
+}
+
 bool handle_input(){
     kbd_event event;
     if (!read_event(&event)) return false;
@@ -229,7 +261,9 @@ bool handle_input(){
 
     if (key == KEY_BACKSPACE) return erase(false);
     if (key == KEY_DELETE) return erase(true);
-    //Up & Down
+
+    if (key == KEY_UP) return scroll_history(-1);
+    if (key == KEY_DOWN) return scroll_history(1);
     
     if (key == KEY_LEFT) return move_buf_cursor(-1);
     if (key == KEY_RIGHT) return move_buf_cursor(1);
