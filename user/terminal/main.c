@@ -8,43 +8,31 @@
 #include "memory/memory.h"
 #include "utils/embedded_fmt/tcf.h"
 #include "files/helpers.h"
+#include "header_utils/screenprinter.h"
+#include "header_utils/composite.h"
 
 embedded_fmt input_format = {};
 
-#define TEXT_SCALE 3
-u32 char_width;
-u32 line_height;
-u32 char_height;
-
 #define INPUT_MARGIN 10
 #define INPUT_HEIGHT (line_height+(INPUT_MARGIN*2))
-
-gpu_point scroll = {};
 
 int history_ptr = 0;
 int history_count = 0;
 
 bool headless = false;
-draw_text_op operation = draw_text_render;
 
 bool cursor_on = false;
 u64 cursor_blink_time = 500;
 
-embedded_fmt current_formatting = {};
 u32 bg_color;
 
-buffer contents = {};
 buffer input_buf = {};
 
 draw_ctx ctx = {};
 
-gpu_size out_size = {};
-
 gpu_rect screen_rect = {};
 
 shell_handle* main_shell;
-
-range_t rerender_range = { };
 
 void flush(shell_handle *handle, bool can_scroll);
 
@@ -61,16 +49,6 @@ int debug_print(const char *fmt, ...){
     return 0;
 }
 
-void append(char *fmt, ...){
-    __attribute__((aligned(16))) va_list args;
-    va_start(args, fmt); 
-    rerender_range = (range_t){ contents.cursor, 0 };
-    size_t size = buffer_write_va(&contents, fmt, args);
-    va_end(args);
-    rerender_range.size = size;
-    flush(main_shell, true);
-}
-
 shell_handle* make_default_shell(shell_bindings bindings){
     return create_sheldon(bindings, 0);
 }
@@ -78,35 +56,20 @@ shell_handle* make_default_shell(shell_bindings bindings){
 void clear(shell_handle *handle){
     if (main_shell && main_shell != handle) return;
     // buffer_wipe(&contents);
-    fb_clear(&ctx, current_formatting.current_bg_color);
+    fb_clear(&ctx, screen_printer_formatting.current_bg_color);
 }
 
 bool return_from_parse = false;
-
-
-void scroll_out(int amount, bool can_rescroll){
-    scroll.y += amount * line_height;
-    if (scroll.y > 0) {
-        scroll.y = 0;
-        return;
-    }
-    current_formatting.cursor_x = 0;
-    current_formatting.cursor_y = 0;
-    clear(current_shell);
-    rerender_range.start = 0;
-    rerender_range.size = contents.buffer_size;
-    flush(current_shell, can_rescroll);
-}
 
 void put_char(shell_handle *handle, char c){
     // print("New char %c %x %x %i",c,handle,main_shell,contents.cursor);
     if (!c || (main_shell && main_shell != handle)) return;
     bool render = true;
-    if (embedded_fmt_parse(&current_formatting, c)){
+    if (embedded_fmt_parse(&screen_printer_formatting, c)){
         render = false;
         return_from_parse = true;
-        if (current_formatting.wipe){
-            current_formatting.wipe = false;
+        if (screen_printer_formatting.wipe){
+            screen_printer_formatting.wipe = false;
             clear(handle);
             return;
         }
@@ -116,41 +79,17 @@ void put_char(shell_handle *handle, char c){
     if (headless)
         serial_transmit(c);
     else {
-        rerender_range.size += buffer_write_lim(&contents, &c, 1);
+        screen_printer_put_char(c);
         if (return_from_parse) flush(handle, true);
         return_from_parse = false;
     }
 }
 
-text_format embedded_fmt_to_text(embedded_fmt fmt){
-    return (text_format){.background = fmt.current_bg_color, .foreground = fmt.current_text_color, .scale = TEXT_SCALE, .wrap = wrap_word};
-}
-
 void flush(shell_handle *handle, bool can_scroll){
     // print("Flush %v {%i,%i}",slice_from_buffer(&contents),rerender_range.start,rerender_range.size);
     if (main_shell && main_shell != handle) return;
-
-    gpu_rect rect = (gpu_rect){ 
-        { 
-            scroll.x,
-            scroll.y,
-        }, { 
-            ctx.width,
-            ctx.height-INPUT_HEIGHT
-        }
-    };
     
-    gpu_point cursor = {.x = current_formatting.cursor_x*char_width,.y = current_formatting.cursor_y*line_height};
-    fb_continuous_draw_text(&ctx, operation, &cursor, slice_from_buffer(&contents), &rerender_range, rect, &out_size, scroll, embedded_fmt_to_text(current_formatting), (text_format_arr){});
-
-    if (cursor.y + scroll.y > (i32)rect.size.height && can_scroll)
-        scroll_out(-line_height, true);
-    
-    current_formatting.cursor_x = cursor.x/char_width;
-    current_formatting.cursor_y = cursor.y/line_height;
-    
-    rerender_range = (range_t){ .start = contents.cursor };
-    operation = draw_text_render;
+    screen_print_flush(can_scroll);
 }
 
 void refresh_input(){
@@ -239,7 +178,7 @@ bool run_command(){
 
     bool success = false;
 
-    append("\r\n");
+    screen_printer_append("\r\n");
 
     write_full_file("/termhistory", input_buf.buffer, input_buf.buffer_size);
     history_count++;
@@ -286,7 +225,7 @@ void handle_mouse(){
     mouse_data data = {};
     get_mouse_status(&data);
     if (data.raw.scroll){
-        scroll_out(data.raw.scroll, false);
+        screen_print_scroll(data.raw.scroll, false);
     }
 }
 
@@ -314,7 +253,7 @@ bool handle_input(){
     if (key == KEY_RIGHT) return move_buf_cursor(1);
 
     if (key == KEY_PAGEDOWN || key == KEY_PAGEUP)
-        scroll_out(key == KEY_PAGEDOWN ? -1 : 1, false);
+        screen_print_scroll(key == KEY_PAGEDOWN ? -1 : 1, false);
     
     if (!readable) return false;
     
@@ -337,25 +276,20 @@ void toggle_cursor(){
 int main(){    
     request_app_ctx(&ctx);
 
-    contents = buffer_create(0x100, buffer_can_grow);
-
-    char_width = fb_char_width(TEXT_SCALE);
-    char_height = fb_char_width(TEXT_SCALE);
-    line_height = fb_line_height(TEXT_SCALE);
+    screen_printer_init(dummy_draw_ctx(ctx.width, ctx.height-INPUT_HEIGHT));
 
     u32 color_buf[2] = {};
     sreadf("/theme", &color_buf, sizeof(uint64_t));
     if ((color_buf[0] & 0xFF000000) == 0) color_buf[0] |= 0xFF000000;
     if ((color_buf[1] & 0xFF000000) == 0) color_buf[1] |= 0xFF000000;
-    current_formatting.default_bg_color = current_formatting.current_bg_color = color_buf[0];
-    current_formatting.default_text_color = current_formatting.current_text_color = color_buf[1];
+    screen_printer_formatting.default_bg_color = screen_printer_formatting.current_bg_color = color_buf[0];
+    screen_printer_formatting.default_text_color = screen_printer_formatting.current_text_color = color_buf[1];
 
-    init_tcf(&current_formatting);
+    init_tcf(&screen_printer_formatting);
 
-    memcpy(&input_format, &current_formatting, sizeof(text_format));
+    memcpy(&input_format, &screen_printer_formatting, sizeof(text_format));
 
-    fb_clear(&ctx, current_formatting.current_bg_color);
-    // int i = 0;
+    fb_clear(&ctx, screen_printer_formatting.current_bg_color);
 
     main_shell = create_shell();
 
@@ -377,6 +311,7 @@ int main(){
         handle_input();
         msleep(1);
         ctx.full_redraw = true;
+        composite(&printer_ctx, (int_point){}, 1, &ctx);
         commit_draw_ctx(&ctx);
     }
     
